@@ -9,6 +9,8 @@ from reportlab.lib import colors
 
 INVOICE_OUTPUT_DIR = "generated_invoices"
 
+
+
 def sanitize_filename(name:str):
     return re.sub(r'[^a-zA-Z0-9_-]', '_', str(name).strip())
 
@@ -58,19 +60,27 @@ def generate_invoice_pdf(invoice_data:dict)->str:
     story.append(meta_table)
     story.append(Spacer(1, 15))
 
-    table_data = [["Item Description", "Qty", "Unit Price ($)", "Total ($)"]]
+    table_data = [["Item Description", "Qty", "Unit Price (RM)", "Total (RM)"]]
     for item in invoice_data.get("items", []):
+        qty = float(item.get("quantity") or 1.0)
+        price = float(item.get("unit_price") or 0.0)
+        tot = float(item.get("total") or (qty * price))
+        
         table_data.append([
-            item.get("description", ""),
-            str(item.get("quantity", 1)),
-            f"{float(item.get('unit_price', 0)):.2f}",
-            f"{float(item.get('total', 0)):.2f}"
+            str(item.get("description") or "Item"),
+            f"{qty:.1f}",
+            f"{price:.2f}",
+            f"{tot:.2f}"
         ])
 
+    # 2. Update Summary Rows
+    subtotal = float(invoice_data.get("subtotal") or 0.0)
+    tax = float(invoice_data.get("tax") or 0.0)
+    total_amount = float(invoice_data.get("total_amount") or (subtotal + tax))
 
-    table_data.append(["", "", "Subtotal:", f"${float(invoice_data.get('subtotal', 0)):.2f}"])
-    table_data.append(["", "", "Tax:", f"${float(invoice_data.get('tax', 0)):.2f}"])
-    table_data.append(["", "", "Total Amount:", f"${float(invoice_data.get('total_amount', 0)):.2f}"])
+    table_data.append(["", "", "Subtotal:", f"RM {subtotal:.2f}"])
+    table_data.append(["", "", "Tax (SST):", f"RM {tax:.2f}"])
+    table_data.append(["", "", "Total Amount:", f"RM {total_amount:.2f}"])
 
     item_table = Table(table_data, colWidths=[280, 50, 100, 100])
     item_table.setStyle(TableStyle([
