@@ -1,5 +1,5 @@
-import { db } from "./firebaseAdmin.js";
 import "dotenv/config";
+import { db } from "./firebaseAdmin.js";
 import express from "express";
 import cors from "cors";
 import { spawn } from "node:child_process";
