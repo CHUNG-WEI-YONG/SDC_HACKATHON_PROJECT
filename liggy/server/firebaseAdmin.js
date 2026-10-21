@@ -1,26 +1,30 @@
 
-import admin from "firebase-admin";
+import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import fs from "node:fs";
 
 const credentialPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
-if (!admin.apps.length) {
+let app;
+
+if (getApps().length === 0) {
   if (credentialPath) {
-    const { default: serviceAccount } = await import(
-      credentialPath.startsWith("file:")
-        ? credentialPath
-        : `file://${credentialPath.replace(/\\/g, "/")}`
+    const serviceAccount = JSON.parse(
+      fs.readFileSync(credentialPath, "utf8")
     );
 
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+    app = initializeApp({
+      credential: cert(serviceAccount),
     });
   } else {
-    admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
+    app = initializeApp({
+      credential: applicationDefault(),
     });
   }
+} else {
+  app = getApps()[0];
 }
 
-const db = admin.firestore();
+const db = getFirestore(app);
 
 export { db };

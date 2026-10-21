@@ -28,12 +28,13 @@ npm install
 cd ..\..
 ```
 
-Create `liggy/server/.env` by copying `liggy/server/.env.example`, then add your AI key and model settings:
+Create `liggy/server/.env` by copying `liggy/server/.env.example`, then add your AI key and model settings. Set `GOOGLE_APPLICATION_CREDENTIALS` to the path of a Firebase service account JSON file with access to the project's Cloud Firestore database. Keep that file outside the repository. On Google Cloud, you can omit the variable and use Application Default Credentials attached to the service instead.
 
 ```dotenv
 PORT=3001
 CLIENT_ORIGIN=http://localhost:5173
 PYTHON_EXECUTABLE=C:/path/to/sdc/.venv/Scripts/python.exe
+GOOGLE_APPLICATION_CREDENTIALS=C:/path/to/firebase-service-account.json
 SESSION_SECRET=replace-this-with-a-long-random-secret
 
 OPENAI_API_KEY=your_api_key_here
@@ -78,11 +79,11 @@ Set `PYTHON_EXECUTABLE` in `.env` to the full path of the virtual environment's 
 
 ## Data and privacy
 
-The SQLite database is `sme_records.db` in the project root. It is initialized and migrated when the Python bridge starts. Each user has a separate customer and invoice scope within that database. Passwords are stored as salted password hashes; the app uses a signed, HTTP-only session cookie.
+Users, customers, and invoices are stored in Cloud Firestore. The Python invoice agent and Express server use Firebase Admin credentials from `GOOGLE_APPLICATION_CREDENTIALS` (or Application Default Credentials). Each user's customers and invoices are stored in subcollections under that user's Firestore record. Passwords are stored as salted password hashes; the app uses a signed, HTTP-only session cookie.
 
-The first account registered against an older database receives its existing unassigned sample/business records. New accounts start with their own empty customer and invoice records. Generated invoice PDFs are written under `generated_invoices/`; the API checks that the signed-in user owns an invoice before serving its PDF.
+Generated invoice PDFs are written under `generated_invoices/`; the API checks that the signed-in user owns an invoice before serving its PDF. Existing data in `sme_records.db` is not automatically copied to Firestore.
 
-For a shared deployment, back up `sme_records.db` and `generated_invoices/` together, protect the server and environment file, and use HTTPS. Do not use a committed development database as a source of production customer records.
+For a shared deployment, configure Firestore backups, protect the server and environment file, and use HTTPS.
 
 ## Troubleshooting
 
