@@ -1,4 +1,4 @@
-
+import { db } from "./firebaseAdmin.js";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -344,6 +344,27 @@ app.post("/api/chat", async (req, res) => {
 
     res.status(500).json({
       error: "Liggy could not process the request. Check the server terminal and API configuration."
+    });
+  }
+});
+
+app.get("/api/firebase-test", async (req, res) => {
+  try {
+    await db.collection("system").doc("connectionTest").set({
+      connected: true,
+      checkedAt: new Date().toISOString(),
+    });
+
+    res.json({
+      success: true,
+      message: "Liggy is connected to Firebase Firestore!",
+    });
+  } catch (error) {
+    console.error("Firebase test failed:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "Firebase connection failed. Check the backend terminal.",
     });
   }
 });
