@@ -3,16 +3,21 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, scryptSync, timingSafeEqual, createHmac } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { processMessage } from "./services/aiService.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  throw new Error("Set SESSION_SECRET to a long random value before running Liggy in production.");
+}
+const SESSION_SECRET = process.env.SESSION_SECRET || "liggy-local-dev-secret-change-before-deploy";
 
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || "http://localhost:5173"
+  origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
+  credentials: true,
 }));
 
 app.use(express.json({ limit: "15mb" }));
@@ -27,6 +32,7 @@ const bridge = spawn(process.env.PYTHON_EXECUTABLE || "python", [
   stdio: ["pipe", "pipe", "inherit"],
 });
 const pendingBridgeCalls = new Map();
+const invoiceReviewOwners = new Map();
 let bridgeOutput = "";
 
 bridge.stdout.setEncoding("utf8");
@@ -85,6 +91,135 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+function signSession(user) {
+  const payload = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 7 * 24 * 60 * 60 * 1000 })).toString("base64url");
+  const signature = createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function readSession(req) {
+  const token = (req.headers.cookie || "").split(";").map((part) => part.trim()).find((part) => part.startsWith("liggy_session="))?.slice("liggy_session=".length);
+  if (!token) return null;
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) return null;
+  const expected = createHmac("sha256", SESSION_SECRET).update(payload).digest();
+  let actual;
+  try { actual = Buffer.from(signature, "base64url"); } catch { return null; }
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return data.exp > Date.now() ? { id: Number(data.id) } : null;
+  } catch { return null; }
+}
+
+function passwordHash(password, salt = randomUUID()) {
+  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+function passwordMatches(password, stored) {
+  const [salt, hash] = String(stored || "").split(":");
+  if (!salt || !hash) return false;
+  const actual = scryptSync(password, salt, 64);
+  const expected = Buffer.from(hash, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function setSession(res, user) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `liggy_session=${signSession(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${secure}`);
+}
+
+app.post("/api/auth/register", async (req, res) => {
+  const username = String(req.body?.username || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  if (username.length < 2 || username.length > 60) return res.status(400).json({ error: "Username must be between 2 and 60 characters." });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return res.status(400).json({ error: "Enter a valid email address." });
+  if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Password must be at least 8 characters." });
+  try {
+    const user = await callInvoiceAgent({ action: "create_user", username, email, password_hash: passwordHash(password) });
+    setSession(res, user);
+    res.status(201).json({ user });
+  } catch (error) {
+    const duplicate = /unique|constraint/i.test(error.message);
+    res.status(duplicate ? 409 : 500).json({ error: duplicate ? "An account with this email already exists." : "Unable to create account." });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
+  try {
+    const record = await callInvoiceAgent({ action: "find_user", email });
+    if (!record || !passwordMatches(password, record.password_hash)) return res.status(401).json({ error: "Email or password is incorrect." });
+    const user = { id: record.id, username: record.username, email: record.email };
+    setSession(res, user);
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to sign in." });
+  }
+});
+
+app.post("/api/auth/logout", (_req, res) => {
+  res.setHeader("Set-Cookie", "liggy_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", async (req, res) => {
+  const session = readSession(req);
+  if (!session) return res.status(401).json({ error: "Not signed in." });
+  try {
+    const user = await callInvoiceAgent({ action: "get_user", user_id: session.id });
+    if (!user) return res.status(401).json({ error: "Account not found." });
+    res.json({ user });
+  } catch { res.status(500).json({ error: "Unable to check your account." }); }
+});
+
+app.use("/api", async (req, res, next) => {
+  if (["/health", "/auth/register", "/auth/login", "/auth/logout", "/auth/me"].includes(req.path)) return next();
+  const session = readSession(req);
+  if (!session) return res.status(401).json({ error: "Please sign in to continue." });
+  try {
+    const user = await callInvoiceAgent({ action: "get_user", user_id: session.id });
+    if (!user) return res.status(401).json({ error: "Your account is unavailable. Please sign in again." });
+    req.user = user;
+    next();
+  } catch { res.status(500).json({ error: "Unable to validate your account." }); }
+});
+
+app.get("/api/business-data", async (req, res) => {
+  try {
+    const data = await callInvoiceAgent({ action: "business_data", user_id: req.user.id });
+    res.json({
+      customers: data.customers,
+      invoices: data.invoices.map((invoice) => {
+        const fileName = path.basename(invoice.file_path || "");
+        const fileUrl = fileName ? `/api/invoices/files/${encodeURIComponent(fileName)}` : null;
+        return {
+          ...invoice,
+          file_path: undefined,
+          preview_url: fileUrl,
+          download_url: fileUrl ? `${fileUrl}?download=1` : null,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error("Business records error:", error.message);
+    res.status(500).json({ error: error.message || "Unable to load business records." });
+  }
+});
+
+app.post("/api/invoices/manual", async (req, res) => {
+  try {
+    const result = await callInvoiceAgent({ action: "manual", user_id: req.user.id, invoice_data: req.body || {} });
+    invoiceReviewOwners.set(result.thread_id, req.user.id);
+    res.json(result);
+  } catch (error) {
+    console.error("Typed invoice error:", error.message);
+    res.status(400).json({ error: error.message || "Unable to prepare this invoice." });
+  }
+});
+
 app.post("/api/invoices/analyze", async (req, res) => {
   const { fileName, content } = req.body || {};
   if (typeof fileName !== "string" || typeof content !== "string") {
@@ -99,7 +234,8 @@ app.post("/api/invoices/analyze", async (req, res) => {
     return res.status(413).json({ error: "The invoice document must be 10 MB or smaller." });
   }
   try {
-    const result = await callInvoiceAgent({ action: "analyze", extension, content });
+    const result = await callInvoiceAgent({ action: "analyze", user_id: req.user.id, extension, content });
+    invoiceReviewOwners.set(result.thread_id, req.user.id);
     res.json(result);
   } catch (error) {
     console.error("Invoice analysis error:", error.message);
@@ -117,11 +253,15 @@ app.post("/api/invoices/:decision", async (req, res) => {
     return res.status(400).json({ error: "A valid invoice review session is required." });
   }
   try {
+    if (invoiceReviewOwners.get(threadId) !== req.user.id) return res.status(403).json({ error: "This invoice review belongs to another account." });
     const result = await callInvoiceAgent({
       action: decision,
+      user_id: req.user.id,
       thread_id: threadId,
       reason: typeof reason === "string" ? reason.slice(0, 1000) : "",
+      invoice_data: req.body?.invoiceData,
     });
+    if (decision === "approve" || decision === "reject") invoiceReviewOwners.delete(threadId);
     if (decision === "approve" && result.file_name) {
       const fileUrl = `/api/invoices/files/${encodeURIComponent(result.file_name)}`;
       return res.json({
@@ -137,7 +277,17 @@ app.post("/api/invoices/:decision", async (req, res) => {
   }
 });
 
-app.get("/api/invoices/files/:fileName", (req, res) => {
+app.post("/api/invoices/:invoiceNo/send", async (req, res) => {
+  try {
+    const result = await callInvoiceAgent({ action: "send_email", user_id: req.user.id, invoice_no: req.params.invoiceNo });
+    res.json(result);
+  } catch (error) {
+    console.error("Invoice email error:", error.message);
+    res.status(400).json({ error: error.message || "Unable to send this invoice." });
+  }
+});
+
+app.get("/api/invoices/files/:fileName", async (req, res) => {
   const fileName = req.params.fileName;
   if (path.basename(fileName) !== fileName || !fileName.toLowerCase().endsWith(".pdf")) {
     return res.status(400).json({ error: "Invalid invoice file." });
@@ -147,6 +297,14 @@ app.get("/api/invoices/files/:fileName", (req, res) => {
   const filePath = path.resolve(invoicesDirectory, fileName);
   if (!filePath.startsWith(`${invoicesDirectory}${path.sep}`)) {
     return res.status(400).json({ error: "Invalid invoice file." });
+  }
+
+  try {
+    const data = await callInvoiceAgent({ action: "business_data", user_id: req.user.id });
+    const ownsFile = data.invoices.some((invoice) => path.basename(invoice.file_path || "") === fileName);
+    if (!ownsFile) return res.status(404).json({ error: "Invoice PDF was not found." });
+  } catch {
+    return res.status(500).json({ error: "Unable to verify invoice ownership." });
   }
 
   const disposition = req.query.download === "1" ? "attachment" : "inline";
@@ -161,6 +319,10 @@ app.get("/api/invoices/files/:fileName", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   const message = req.body?.message;
+  const history = Array.isArray(req.body?.history)
+    ? req.body.history.slice(-8).filter((entry) => ["user", "assistant"].includes(entry?.role) && typeof entry?.content === "string")
+        .map((entry) => ({ role: entry.role, content: entry.content.slice(0, 1000) }))
+    : [];
 
   if (typeof message !== "string" || !message.trim()) {
     return res.status(400).json({
@@ -168,14 +330,14 @@ app.post("/api/chat", async (req, res) => {
     });
   }
 
-  if (message.length > 6000) {
+  if (message.length > 2000) {
     return res.status(400).json({
       error: "Message is too long."
     });
   }
 
   try {
-    const result = await processMessage(message.trim());
+    const result = await processMessage(message.trim(), history);
     res.json(result);
   } catch (error) {
     console.error("Liggy AI error:", error.message);

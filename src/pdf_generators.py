@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import datetime
+from xml.sax.saxutils import escape
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -39,17 +40,19 @@ def generate_invoice_pdf(invoice_data:dict)->str:
         textColor=colors.HexColor('#1E3A8A'),
         spaceAfter=10
     )
-    story.append(Paragraph(f"TAX E-INVOICE: #{invoice_data.get('invoice_no')}", title_style))
+    story.append(Paragraph(f"E-INVOICE: #{escape(str(invoice_data.get('invoice_no') or ''))}", title_style))
     story.append(Spacer(1, 10))
 
     meta_info = [
         [
-            Paragraph(f"<b>Billed To:</b><br/>{invoice_data.get('customer_name')}<br/>"
-                      f"TIN: {invoice_data.get('customer_tin') or 'N/A'}<br/>"
-                      f"Email: {invoice_data.get('customer_email') or 'N/A'}", style['Normal']),
-            Paragraph(f"<b>Date:</b> {datetime.now().strftime('%Y-%m-%d')}<br/>"
+            Paragraph(f"<b>From:</b> {escape(str(invoice_data.get('seller_name') or 'Business'))}<br/>"
+                      f"TIN: {escape(str(invoice_data.get('seller_tin') or 'N/A'))}<br/><br/>"
+                      f"<b>Billed To:</b> {escape(str(invoice_data.get('customer_name') or ''))}<br/>"
+                      f"TIN: {escape(str(invoice_data.get('customer_tin') or 'N/A'))}<br/>"
+                      f"Email: {escape(str(invoice_data.get('customer_email') or 'N/A'))}", style['Normal']),
+            Paragraph(f"<b>Date:</b> {escape(str(invoice_data.get('invoice_date') or datetime.now().strftime('%Y-%m-%d')))}<br/>"
                       f"<b>Status:</b> Validated & Approved<br/>"
-                      f"<b>Standard:</b> SME Digital e-Invoice", style['Normal'])
+                      f"<b>Currency:</b> {escape(str(invoice_data.get('currency') or 'MYR'))}", style['Normal'])
         ]
     ]
     meta_table = Table(meta_info, colWidths=[270, 260])
@@ -60,14 +63,15 @@ def generate_invoice_pdf(invoice_data:dict)->str:
     story.append(meta_table)
     story.append(Spacer(1, 15))
 
-    table_data = [["Item Description", "Qty", "Unit Price (RM)", "Total (RM)"]]
+    currency = escape(str(invoice_data.get("currency") or "MYR"))
+    table_data = [["Item Description", "Qty", f"Unit Price ({currency})", f"Total ({currency})"]]
     for item in invoice_data.get("items", []):
         qty = float(item.get("quantity") or 1.0)
         price = float(item.get("unit_price") or 0.0)
         tot = float(item.get("total") or (qty * price))
         
         table_data.append([
-            str(item.get("description") or "Item"),
+            escape(str(item.get("description") or "Item")),
             f"{qty:.1f}",
             f"{price:.2f}",
             f"{tot:.2f}"
@@ -78,9 +82,9 @@ def generate_invoice_pdf(invoice_data:dict)->str:
     tax = float(invoice_data.get("tax") or 0.0)
     total_amount = float(invoice_data.get("total_amount") or (subtotal + tax))
 
-    table_data.append(["", "", "Subtotal:", f"RM {subtotal:.2f}"])
-    table_data.append(["", "", "Tax (SST):", f"RM {tax:.2f}"])
-    table_data.append(["", "", "Total Amount:", f"RM {total_amount:.2f}"])
+    table_data.append(["", "", "Subtotal:", f"{currency} {subtotal:.2f}"])
+    table_data.append(["", "", "Tax:", f"{currency} {tax:.2f}"])
+    table_data.append(["", "", "Total Amount:", f"{currency} {total_amount:.2f}"])
 
     item_table = Table(table_data, colWidths=[280, 50, 100, 100])
     item_table.setStyle(TableStyle([
@@ -93,6 +97,10 @@ def generate_invoice_pdf(invoice_data:dict)->str:
         ('FONTNAME', (2, -3), (-1, -1), 'Helvetica-Bold'),
     ]))
     story.append(item_table)
+    notes = str(invoice_data.get("notes") or "").strip()
+    if notes:
+        story.append(Spacer(1, 14))
+        story.append(Paragraph(f"<b>Notes:</b> {escape(notes)}", style["Normal"]))
 
     # Compile PDF
     doc.build(story)

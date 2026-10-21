@@ -1,59 +1,132 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./style.css";
 
-const initialSales = [
-  { id: 1, item: "Coffee", customer: "Ahmad", amount: 15, status: "Paid" },
-  { id: 2, item: "Lunch Set", customer: "Sarah", amount: 24, status: "Paid" },
-  { id: 3, item: "Catering Order", customer: "Daniel", amount: 180, status: "Pending" },
-  { id: 4, item: "Tea", customer: "Mei Ling", amount: 8, status: "Paid" },
-];
-
 function App() {
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({ username: "", email: "", password: "" });
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
   const [page, setPage] = useState("Overview");
-  const [sales, setSales] = useState(initialSales);
+  const [sales, setSales] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [invoiceHistory, setInvoiceHistory] = useState([]);
+  const [businessDataLoaded, setBusinessDataLoaded] = useState(false);
   const [invoice, setInvoice] = useState({
+    invoiceNo: "",
     seller: "",
     buyer: "",
     buyerId: "",
-    description: "",
-    quantity: 1,
-    price: "",
+    buyerEmail: "",
     date: new Date().toISOString().slice(0, 10),
+    currency: "MYR",
+    tax: "0",
+    notes: "",
   });
-  const [invoiceResult, setInvoiceResult] = useState(null);
+  const [invoiceItems, setInvoiceItems] = useState([{ description: "", quantity: 1, unit_price: "" }]);
   const [agentReview, setAgentReview] = useState(null);
   const [agentDecision, setAgentDecision] = useState("");
   const [agentPdf, setAgentPdf] = useState(null);
+  const [emailPrompt, setEmailPrompt] = useState(null);
+  const [emailOutcome, setEmailOutcome] = useState("");
   const [invoiceFile, setInvoiceFile] = useState(null);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const revenue = sales
-    .filter((sale) => sale.status === "Paid")
-    .reduce((sum, sale) => sum + Number(sale.amount), 0);
+  const totalSalesDisplay = formatCurrencyTotals(invoiceHistory);
 
-  const totalSales = sales.reduce(
-    (sum, sale) => sum + Number(sale.amount),
-    0
-  );
+  async function refreshBusinessData() {
+    const response = await fetch("/api/business-data");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load business records.");
+    setCustomers(data.customers || []);
+    setInvoiceHistory(data.invoices || []);
+    setSales((data.invoices || []).map((record) => ({
+      id: record.invoice_no,
+      invoiceNo: record.invoice_no,
+      item: (record.invoice_data?.items || []).map((item) => item.description).join(", ") || "Invoice",
+      customer: record.customer_name,
+      amount: Number(record.total_amount || 0),
+      currency: record.invoice_data?.currency || "MYR",
+      status: record.status || "Approved",
+      date: record.invoice_date || record.created_at,
+    })));
+    setBusinessDataLoaded(true);
+    return data;
+  }
+
+  useEffect(() => {
+    fetch("/api/auth/me").then(async (response) => {
+      const data = await response.json();
+      if (response.ok) setUser(data.user);
+    }).catch(() => {}).finally(() => setAuthReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    setError("");
+    refreshBusinessData().catch((err) => {
+      setError(err.message);
+      setBusinessDataLoaded(true);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !["Daily Sales Report", "Monthly Insights"].includes(page)) return;
+    setReport(buildSalesReport(invoiceHistory, page === "Daily Sales Report" ? "daily" : "monthly"));
+  }, [page, invoiceHistory, user]);
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthBusy(true);
+    try {
+      const response = await fetch(`/api/auth/${authMode === "register" ? "register" : "login"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(authForm),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to sign in.");
+      setUser(data.user);
+      setPage("Overview");
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
+    setCustomers([]);
+    setInvoiceHistory([]);
+    setSales([]);
+    setBusinessDataLoaded(false);
+    setAgentReview(null);
+    setAgentPdf(null);
+    setEmailPrompt(null);
+    setChatMessages([]);
+  }
 
   async function createInvoice(event) {
     event.preventDefault();
     setError("");
-    setInvoiceResult(null);
+    setEmailOutcome("");
     setLoading(true);
 
     try {
-      const response = await fetch("/api/invoices/draft", {
+      const response = await fetch("/api/invoices/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...invoice,
-          quantity: Number(invoice.quantity),
-          price: Number(invoice.price),
-        }),
+        body: JSON.stringify(invoicePayload()),
       });
 
       const data = await response.json();
@@ -62,7 +135,11 @@ function App() {
         throw new Error(data.error || "Unable to generate invoice.");
       }
 
-      setInvoiceResult(data.invoice || data);
+      setAgentReview(data);
+      useExtractedInvoice(data.state);
+      setAgentDecision("");
+      setAgentPdf(null);
+      setEmailPrompt(null);
     } catch (err) {
       setError(
         err.message.includes("fetch")
@@ -72,6 +149,55 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function invoicePayload() {
+    return {
+      invoice_no: invoice.invoiceNo,
+      seller_name: invoice.seller,
+      customer_name: invoice.buyer,
+      customer_tin: invoice.buyerId,
+      customer_email: invoice.buyerEmail,
+      invoice_date: invoice.date,
+      tax: Number(invoice.tax || 0),
+      notes: invoice.notes,
+      currency: invoice.currency,
+      items: invoiceItems.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity),
+        unit_price: Number(item.unit_price),
+      })),
+    };
+  }
+
+  function useExtractedInvoice(state) {
+    const data = state?.invoice_data || {};
+    const items = data.items?.length ? data.items : [{ description: "", quantity: 1, unit_price: "" }];
+    setInvoice({
+      invoiceNo: data.invoice_no || "",
+      seller: data.seller_name || "",
+      buyer: data.customer_name || "",
+      buyerId: data.customer_tin || "",
+      buyerEmail: data.customer_email || "",
+      date: data.invoice_date || new Date().toISOString().slice(0, 10),
+      currency: data.currency || "MYR",
+      tax: data.tax ?? "0",
+      notes: data.notes || "",
+    });
+    setInvoiceItems(items.map((item) => ({
+      description: item.description || "",
+      quantity: item.quantity ?? 1,
+      unit_price: item.unit_price ?? "",
+    })));
+  }
+
+  function updateBuyerName(name) {
+    const match = customers.find((customer) => customer.customer_name.toLowerCase() === name.trim().toLowerCase());
+    setInvoice((previous) => ({
+      ...previous,
+      buyer: name,
+      ...(match ? { buyerEmail: match.email || "", buyerId: match.tin_number || "" } : {}),
+    }));
   }
 
   async function analyzeInvoice(event) {
@@ -101,6 +227,10 @@ function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to analyze invoice.");
       setAgentReview(data);
+      useExtractedInvoice(data.state);
+      setAgentDecision("");
+      setAgentPdf(null);
+      setEmailPrompt(null);
     } catch (err) {
       setError(err.message.includes("fetch")
         ? "Cannot connect to the backend. Make sure the Liggy server and Python invoice agent are running."
@@ -118,7 +248,7 @@ function App() {
       const response = await fetch(`/api/invoices/${decision}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: agentReview.thread_id }),
+        body: JSON.stringify({ threadId: agentReview.thread_id, invoiceData: invoicePayload() }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to save invoice decision.");
@@ -126,6 +256,29 @@ function App() {
       if (data.preview_url && data.download_url) {
         setAgentPdf({ previewUrl: data.preview_url, downloadUrl: data.download_url });
       }
+      if (decision === "approve") {
+        setEmailPrompt({ invoiceNo: data.invoice_no, email: data.customer_email || "" });
+        setEmailOutcome("");
+        await refreshBusinessData();
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendInvoiceEmail() {
+    if (!emailPrompt?.invoiceNo) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/invoices/${encodeURIComponent(emailPrompt.invoiceNo)}/send`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to send this invoice.");
+      setEmailOutcome(data.message || "Invoice email sent.");
+      setEmailPrompt(null);
+      await refreshBusinessData();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -139,66 +292,73 @@ function App() {
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/reports/${type}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sales,
-          period: type === "daily" ? "today" : "this month",
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Unable to generate report.");
-      }
-
-      setReport(data.report || data);
+      const data = await refreshBusinessData();
+      setReport(buildSalesReport(data.invoices || [], type));
     } catch (err) {
-      setError(
-        err.message.includes("fetch")
-          ? "The report API is not connected yet. You can still view the sales figures on this page."
-          : err.message
-      );
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   }
 
-  function addSale(event) {
+  async function sendChatMessage(event) {
     event.preventDefault();
-
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const amount = Number(formData.get("amount"));
-
-    if (!amount || amount <= 0) {
-      setError("Enter a valid sales amount.");
-      return;
+    const message = chatInput.trim();
+    if (!message || chatBusy) return;
+    setChatInput("");
+    setChatMessages((previous) => [...previous, { role: "user", text: message }]);
+    setChatBusy(true);
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history: chatMessages.slice(-8).map(({ role, text }) => ({ role, content: text })),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Liggy Help could not respond.");
+      setChatMessages((previous) => [...previous, { role: "assistant", text: data.reply }]);
+    } catch (err) {
+      setChatMessages((previous) => [...previous, { role: "assistant", text: err.message }]);
+    } finally {
+      setChatBusy(false);
     }
-
-    setSales((previous) => [
-      ...previous,
-      {
-        id: Date.now(),
-        item: formData.get("item"),
-        customer: formData.get("customer") || "Walk-in customer",
-        amount,
-        status: formData.get("status"),
-      },
-    ]);
-
-    setError("");
-    form.reset();
   }
 
   const navItems = [
     { name: "Overview", icon: "◫" },
     { name: "E-Invoice", icon: "▤" },
+    { name: "Customers", icon: "♙" },
+    { name: "Invoice History", icon: "▧" },
     { name: "Daily Sales Report", icon: "▥" },
     { name: "Monthly Insights", icon: "◷" },
+    { name: "Liggy AI", icon: "✦" },
   ];
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const monthKey = todayKey.slice(0, 7);
+  const todayInvoices = invoiceHistory.filter((record) => (record.invoice_date || record.created_at || "").slice(0, 10) === todayKey);
+  const monthInvoices = invoiceHistory.filter((record) => (record.invoice_date || record.created_at || "").startsWith(monthKey));
+
+  if (!authReady) return <div className="auth-screen"><div className="auth-card">Loading Liggy…</div></div>;
+  if (!user) return (
+    <div className="auth-screen">
+      <form className="auth-card" onSubmit={submitAuth}>
+        <div className="brand auth-brand"><div className="brand-icon">L</div><span>liggy</span></div>
+        <p className="eyebrow">YOUR PRIVATE BUSINESS WORKSPACE</p>
+        <h1>{authMode === "register" ? "Create your account" : "Welcome back"}</h1>
+        <p className="muted">Your customers, invoices, and reports belong to your account.</p>
+        {authMode === "register" && <label className="field"><span>Username</span><input required minLength="2" maxLength="60" autoComplete="username" value={authForm.username} onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })} /></label>}
+        <label className="field"><span>Email</span><input required type="email" autoComplete="email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} /></label>
+        <label className="field"><span>Password</span><input required type="password" minLength="8" autoComplete={authMode === "register" ? "new-password" : "current-password"} value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} /></label>
+        {authError && <p className="error-banner">{authError}</p>}
+        <button className="primary-button auth-submit" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "register" ? "Create account" : "Sign in"}</button>
+        <p className="auth-switch">{authMode === "register" ? "Already have an account?" : "New to Liggy?"} <button type="button" onClick={() => { setAuthMode(authMode === "register" ? "login" : "register"); setAuthError(""); }}> {authMode === "register" ? "Sign in" : "Create account"}</button></p>
+      </form>
+    </div>
+  );
 
   return (
     <div className="app-shell">
@@ -236,11 +396,12 @@ function App() {
             </div>
           </div>
           <div className="profile">
-            <div className="avatar">B</div>
+            <div className="avatar">{(user.username || "U").slice(0, 1).toUpperCase()}</div>
             <div>
-              <strong>My Business</strong>
-              <small>Business account</small>
+              <strong>{user.username}</strong>
+              <small>{user.email}</small>
             </div>
+            <button className="sign-out-button" onClick={signOut}>Sign out</button>
           </div>
         </div>
       </aside>
@@ -288,31 +449,27 @@ function App() {
 
               <section className="stats-grid">
                 <StatCard
-                  label="Recorded Sales"
-                  value={`RM ${totalSales.toLocaleString("en-MY", {
-                    minimumFractionDigits: 2,
-                  })}`}
-                  note={`${sales.length} transactions recorded`}
+                  label="All-time Invoiced"
+                  value={totalSalesDisplay || "MYR 0.00"}
+                  note={`${invoiceHistory.length} invoices saved`}
                   icon="↗"
                 />
                 <StatCard
-                  label="Paid Sales"
-                  value={`RM ${revenue.toLocaleString("en-MY", {
-                    minimumFractionDigits: 2,
-                  })}`}
-                  note="From paid transactions"
+                  label="This Month"
+                  value={formatCurrencyTotals(monthInvoices) || "MYR 0.00"}
+                  note="Approved invoice value"
                   icon="✓"
                 />
                 <StatCard
-                  label="Total Orders"
-                  value={String(sales.length)}
-                  note="Recorded transactions"
+                  label="Saved Invoices"
+                  value={String(invoiceHistory.length)}
+                  note="Historical invoice records"
                   icon="▤"
                 />
                 <StatCard
-                  label="Pending Payments"
-                  value={String(sales.filter((s) => s.status === "Pending").length)}
-                  note="Awaiting payment"
+                  label="Customers"
+                  value={String(customers.length)}
+                  note="Saved in customer records"
                   icon="◷"
                 />
               </section>
@@ -322,7 +479,7 @@ function App() {
                   <div className="panel-heading">
                     <div>
                       <h2>Recent Transactions</h2>
-                      <p className="muted">Your latest recorded sales</p>
+                      <p className="muted">Your latest approved e-invoices</p>
                     </div>
                     <button
                       className="text-button"
@@ -357,46 +514,9 @@ function App() {
                     description="Understand business performance"
                     onClick={() => setPage("Monthly Insights")}
                   />
+                  <QuickAction icon="♙" title="Customer Records" description="See each customer's invoice spend" onClick={() => setPage("Customers")} />
+                  <QuickAction icon="▧" title="Invoice History" description="Open or download saved invoices" onClick={() => setPage("Invoice History")} />
                 </div>
-              </section>
-
-              <section className="panel add-sale-panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>Record a Sale</h2>
-                    <p className="muted">
-                      Add a transaction to your current dashboard data.
-                    </p>
-                  </div>
-                </div>
-
-                <form className="sale-form" onSubmit={addSale}>
-                  <Field label="Product / Service">
-                    <input name="item" placeholder="e.g. Coffee" required />
-                  </Field>
-                  <Field label="Customer">
-                    <input name="customer" placeholder="Customer name" />
-                  </Field>
-                  <Field label="Amount (RM)">
-                    <input
-                      name="amount"
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      placeholder="0.00"
-                      required
-                    />
-                  </Field>
-                  <Field label="Payment Status">
-                    <select name="status">
-                      <option>Paid</option>
-                      <option>Pending</option>
-                    </select>
-                  </Field>
-                  <button className="primary-button" type="submit">
-                    Add Sale
-                  </button>
-                </form>
               </section>
             </>
           )}
@@ -406,17 +526,19 @@ function App() {
               <PageHeading
                 eyebrow="DOCUMENT MANAGEMENT"
                 title="E-Invoice Assistant"
-                description="Enter your transaction details to prepare an invoice draft."
+                description="Type invoice details or upload a document. Both options update the same invoice preview and approval flow."
+                action={<span className="ai-agent-badge">✦ Liggy agent: extract → verify → save</span>}
               />
 
               <section className="panel invoice-agent-panel">
                 <div className="panel-heading">
                   <div>
-                    <h2>Review an Existing Invoice</h2>
+                    <h2>Use an invoice document</h2>
                     <p className="muted">
-                      Upload a document for Liggy’s extraction and verification agent to review before saving it.
+                      Choose a picture or PDF to extract details. Review and edit the results in the form and preview below.
                     </p>
                   </div>
+                  <span className="ai-agent-badge">✦ Agentic AI review</span>
                 </div>
                 <form className="invoice-agent-upload" onSubmit={analyzeInvoice}>
                   <Field label="Invoice document (PDF, image, TXT, JSON, or CSV; up to 10 MB)">
@@ -434,20 +556,19 @@ function App() {
 
                 {agentReview && (
                   <div className="agent-review-result">
-                    <h3>Extracted invoice details</h3>
-                    <pre>{JSON.stringify(agentReview.state?.invoice_data || {}, null, 2)}</pre>
+                    <h3>{agentDecision ? "Invoice decision" : "Agent review complete"}</h3>
                     {agentReview.state?.verification_errors?.length > 0 && (
                       <div className="agent-verification-errors">
                         <strong>Items to review</strong>
                         <ul>{agentReview.state.verification_errors.map((item, index) => <li key={index}>{item}</li>)}</ul>
                       </div>
                     )}
-                    {agentReview.state?.is_verified && (
-                      <p className="agent-verified">Invoice checks passed. Review the extracted details before approving.</p>
+                    {agentReview.state?.is_verified && !agentDecision && (
+                      <p className="agent-verified">Agent math and customer checks passed. Check the preview before approving.</p>
                     )}
                     {!agentDecision ? (
                       <div className="agent-decision-actions">
-                        <button className="primary-button" onClick={() => decideInvoice("approve")} disabled={loading}>
+                        <button className="primary-button" onClick={() => decideInvoice("approve")} disabled={loading || !invoice.seller || !invoice.buyer || !invoice.date || invoiceItems.some((item) => !item.description || Number(item.quantity) <= 0)}>
                           {loading ? "Saving..." : "Approve and Save PDF"}
                         </button>
                         <button className="secondary-button" onClick={() => decideInvoice("reject")} disabled={loading}>
@@ -457,23 +578,6 @@ function App() {
                     ) : (
                       <div className="agent-saved-invoice">
                         <div className="success-banner">{agentDecision}</div>
-                        {agentPdf && (
-                          <>
-                            <div className="agent-pdf-actions">
-                              <a className="primary-button" href={agentPdf.downloadUrl}>
-                                Download PDF
-                              </a>
-                              <a className="secondary-button" href={agentPdf.previewUrl} target="_blank" rel="noreferrer">
-                                Open in New Tab
-                              </a>
-                            </div>
-                            <iframe
-                              className="agent-pdf-preview"
-                              src={agentPdf.previewUrl}
-                              title="Approved invoice PDF preview"
-                            />
-                          </>
-                        )}
                       </div>
                     )}
                   </div>
@@ -483,12 +587,20 @@ function App() {
               <div className="two-column-layout">
                 <section className="panel">
                   <h2>Invoice Details</h2>
+                  <p className="muted ai-workflow-note">✦ AI-assisted extraction, customer matching, and total checks run before saving.</p>
                   <p className="muted">
                     Fill in the information below. Required fields are marked
                     with *.
                   </p>
 
                   <form className="form-stack" onSubmit={createInvoice}>
+                    <Field label="Invoice Number (leave blank to generate)">
+                      <input
+                        value={invoice.invoiceNo}
+                        onChange={(e) => setInvoice({ ...invoice, invoiceNo: e.target.value })}
+                        placeholder="Generated automatically"
+                      />
+                    </Field>
                     <Field label="Seller / Business Name *">
                       <input
                         value={invoice.seller}
@@ -502,13 +614,13 @@ function App() {
 
                     <Field label="Buyer / Customer Name *">
                       <input
+                        list="saved-customers"
                         value={invoice.buyer}
-                        onChange={(e) =>
-                          setInvoice({ ...invoice, buyer: e.target.value })
-                        }
+                        onChange={(e) => updateBuyerName(e.target.value)}
                         placeholder="Customer name"
                         required
                       />
+                      <datalist id="saved-customers">{customers.map((customer) => <option key={customer.customer_name} value={customer.customer_name} />)}</datalist>
                     </Field>
 
                     <Field label="Buyer Tax ID (if applicable)">
@@ -518,6 +630,15 @@ function App() {
                           setInvoice({ ...invoice, buyerId: e.target.value })
                         }
                         placeholder="Customer tax identification number"
+                      />
+                    </Field>
+
+                    <Field label="Buyer Email (optional)">
+                      <input
+                        type="email"
+                        value={invoice.buyerEmail}
+                        onChange={(e) => setInvoice({ ...invoice, buyerEmail: e.target.value })}
+                        placeholder="billing@example.com"
                       />
                     </Field>
 
@@ -532,59 +653,46 @@ function App() {
                       />
                     </Field>
 
-                    <Field label="Product / Service Description *">
-                      <textarea
-                        value={invoice.description}
-                        onChange={(e) =>
-                          setInvoice({
-                            ...invoice,
-                            description: e.target.value,
-                          })
-                        }
-                        placeholder="Describe the goods or services sold"
-                        required
-                      />
+                    <Field label="Currency">
+                      <select value={invoice.currency} onChange={(e) => setInvoice({ ...invoice, currency: e.target.value })}>
+                        <option value="MYR">MYR — Malaysian Ringgit</option>
+                        <option value="USD">USD — US Dollar</option>
+                        <option value="SGD">SGD — Singapore Dollar</option>
+                      </select>
                     </Field>
 
-                    <div className="form-row">
-                      <Field label="Quantity *">
-                        <input
-                          type="number"
-                          min="1"
-                          value={invoice.quantity}
-                          onChange={(e) =>
-                            setInvoice({
-                              ...invoice,
-                              quantity: e.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </Field>
-                      <Field label="Unit Price (RM) *">
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          value={invoice.price}
-                          onChange={(e) =>
-                            setInvoice({ ...invoice, price: e.target.value })
-                          }
-                          placeholder="0.00"
-                          required
-                        />
-                      </Field>
+                    <div className="invoice-items-editor">
+                      <div className="panel-heading">
+                        <h3>Items</h3>
+                        <button type="button" className="text-button" onClick={() => setInvoiceItems([...invoiceItems, { description: "", quantity: 1, unit_price: "" }])}>+ Add item</button>
+                      </div>
+                      {invoiceItems.map((item, index) => (
+                        <div className="invoice-item-edit" key={index}>
+                          <Field label={`Description ${index + 1} *`}>
+                            <input value={item.description} onChange={(e) => setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, description: e.target.value } : entry))} required />
+                          </Field>
+                          <Field label="Quantity *">
+                            <input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(e) => setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, quantity: e.target.value } : entry))} required />
+                          </Field>
+                          <Field label={`Unit Price (${invoice.currency}) *`}>
+                            <input type="number" min="0" step="0.01" value={item.unit_price} onChange={(e) => setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, unit_price: e.target.value } : entry))} required />
+                          </Field>
+                          {invoiceItems.length > 1 && <button type="button" className="text-button" onClick={() => setInvoiceItems(invoiceItems.filter((_, i) => i !== index))}>Remove</button>}
+                        </div>
+                      ))}
                     </div>
+
+                    <Field label={`Tax amount (${invoice.currency})`}>
+                      <input type="number" min="0" step="0.01" value={invoice.tax} onChange={(e) => setInvoice({ ...invoice, tax: e.target.value })} />
+                    </Field>
+
+                    <Field label="Notes (optional)">
+                      <textarea value={invoice.notes} onChange={(e) => setInvoice({ ...invoice, notes: e.target.value })} placeholder="Payment terms or other notes" />
+                    </Field>
 
                     <div className="invoice-total">
                       <span>Subtotal before tax</span>
-                      <strong>
-                        RM{" "}
-                        {(
-                          Number(invoice.quantity || 0) *
-                          Number(invoice.price || 0)
-                        ).toFixed(2)}
-                      </strong>
+                      <strong>{invoice.currency} {invoiceItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0).toFixed(2)}</strong>
                     </div>
 
                     <p className="small-note">
@@ -596,7 +704,7 @@ function App() {
                       className="primary-button full-button"
                       disabled={loading}
                     >
-                      {loading ? "Preparing draft..." : "Generate Invoice Draft →"}
+                      {loading ? "Preparing review..." : "Check and Preview Invoice →"}
                     </button>
                   </form>
                 </section>
@@ -607,7 +715,7 @@ function App() {
                       <h2>Invoice Preview</h2>
                       <p className="muted">Review the information before use.</p>
                     </div>
-                    <span className="status-badge draft">DRAFT</span>
+                    <span className="status-badge draft">{agentDecision && agentPdf ? "SAVED" : "LIVE PREVIEW"}</span>
                   </div>
 
                   <div className="invoice-preview">
@@ -616,6 +724,7 @@ function App() {
                     <p className="muted">
                       {invoice.seller || "Your Business Name"}
                     </p>
+                    <div className="preview-detail"><span>Invoice Number</span><strong>{invoice.invoiceNo || "Generated on save"}</strong></div>
                     <hr />
                     <div className="preview-detail">
                       <span>Bill To</span>
@@ -626,60 +735,141 @@ function App() {
                       <strong>{invoice.date || "—"}</strong>
                     </div>
                     <div className="preview-detail">
-                      <span>Buyer Tax ID</span>
-                      <strong>{invoice.buyerId || "Not provided"}</strong>
+                      <span>Customer contact</span>
+                      <strong>{invoice.buyerEmail || "No email provided"} · TIN {invoice.buyerId || "not provided"}</strong>
                     </div>
 
                     <div className="preview-line">
                       <span>Description</span>
                       <span>Amount</span>
                     </div>
-                    <div className="preview-detail">
-                      <span>
-                        {invoice.description || "Product / service"}
-                        <small>
-                          {invoice.quantity} × RM{" "}
-                          {Number(invoice.price || 0).toFixed(2)}
-                        </small>
-                      </span>
-                      <strong>
-                        RM{" "}
-                        {(
-                          Number(invoice.quantity || 0) *
-                          Number(invoice.price || 0)
-                        ).toFixed(2)}
-                      </strong>
-                    </div>
+                    {invoiceItems.map((item, index) => (
+                      <div className="preview-detail" key={index}>
+                        <span>{item.description || "Product / service"}<small>{item.quantity} × {invoice.currency} {Number(item.unit_price || 0).toFixed(2)}</small></span>
+                        <strong>{invoice.currency} {(Number(item.quantity || 0) * Number(item.unit_price || 0)).toFixed(2)}</strong>
+                      </div>
+                    ))}
                     <hr />
                     <div className="preview-total">
                       <span>Subtotal</span>
-                      <strong>
-                        RM{" "}
-                        {(
-                          Number(invoice.quantity || 0) *
-                          Number(invoice.price || 0)
-                        ).toFixed(2)}
-                      </strong>
+                      <strong>{invoice.currency} {invoiceItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0).toFixed(2)}</strong>
                     </div>
-
-                    {invoiceResult && (
-                      <div className="success-banner">
-                        Invoice draft generated by the backend.
-                        <pre>
-                          {JSON.stringify(invoiceResult, null, 2)}
-                        </pre>
+                    <div className="preview-total"><span>Tax</span><strong>{invoice.currency} {Number(invoice.tax || 0).toFixed(2)}</strong></div>
+                    <div className="preview-total"><span>Total</span><strong>{invoice.currency} {(invoiceItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0) + Number(invoice.tax || 0)).toFixed(2)}</strong></div>
+                    {invoice.notes && <p className="small-note">{invoice.notes}</p>}
+                    {agentDecision && <div className="success-banner">{agentDecision}</div>}
+                    {agentPdf && <div className="agent-pdf-actions"><a className="primary-button" href={agentPdf.downloadUrl}>Download PDF</a><a className="secondary-button" href={agentPdf.previewUrl} target="_blank" rel="noreferrer">Open PDF</a></div>}
+                    {agentPdf && <iframe className="agent-pdf-preview" src={agentPdf.previewUrl} title="Saved invoice PDF" />}
+                    {emailPrompt && (emailPrompt.email ? (
+                      <div className="email-send-prompt">
+                        <strong>Invoice saved. Send it to {emailPrompt.email}?</strong>
+                        <div className="agent-pdf-actions">
+                          <button type="button" className="primary-button" onClick={sendInvoiceEmail} disabled={loading}>{loading ? "Sending..." : "Yes, send invoice"}</button>
+                          <button type="button" className="secondary-button" onClick={() => { setEmailPrompt(null); setEmailOutcome("Email not sent."); }}>No, skip</button>
+                        </div>
                       </div>
-                    )}
-
-                    <button
-                      className="secondary-button full-button"
-                      onClick={() => window.print()}
-                    >
-                      Print / Save Preview as PDF
-                    </button>
+                    ) : <p className="small-note">No customer email is on record. The invoice was saved without sending.</p>)}
+                    {emailOutcome && <p className="agent-verified">{emailOutcome}</p>}
                   </div>
                 </section>
               </div>
+            </>
+          )}
+
+          {page === "Customers" && (
+            <>
+              <PageHeading
+                eyebrow="BUSINESS RECORDS"
+                title="Customer Records"
+                description="Customer details and their cumulative approved invoice spend from the existing business database."
+                action={<span className="ai-agent-badge">{customers.length} customers</span>}
+              />
+              <section className="panel">
+                {businessDataLoaded && customers.length === 0 ? <p className="muted">No customers saved yet. Approved invoices will add customers here automatically.</p> : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead><tr><th>Customer</th><th>Email</th><th>Tax ID</th><th>Invoices</th><th>Total spent</th><th>Last invoice</th></tr></thead>
+                      <tbody>{customers.map((customer) => (
+                        <tr key={customer.customer_name}>
+                          <td><strong>{customer.customer_name}</strong></td>
+                          <td>{customer.email || "—"}</td>
+                          <td>{customer.tin_number || "—"}</td>
+                          <td>{customer.invoice_count}</td>
+                          <td>{formatCustomerSpend(customer.total_spent_by_currency)}</td>
+                          <td>{customer.last_invoice_at ? new Date(customer.last_invoice_at).toLocaleDateString() : "—"}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+
+          {page === "Invoice History" && (
+            <>
+              <PageHeading
+                eyebrow="BUSINESS RECORDS"
+                title="E-Invoice History"
+                description="Every approved typed or document-based e-invoice is stored here with its PDF."
+                action={<span className="ai-agent-badge">{invoiceHistory.length} saved invoices</span>}
+              />
+              <section className="panel">
+                {invoiceHistory.length === 0 ? <p className="muted">No approved invoices yet. They will appear here after you save one from E-Invoice.</p> : (
+                  <div className="table-wrapper">
+                    <table>
+                      <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Total</th><th>Source</th><th>Email</th><th>PDF</th></tr></thead>
+                      <tbody>{invoiceHistory.map((record) => (
+                        <tr key={record.invoice_no}>
+                          <td><strong>{record.invoice_no}</strong></td>
+                          <td>{record.customer_name || "—"}</td>
+                          <td>{record.invoice_date || (record.created_at || "").slice(0, 10) || "—"}</td>
+                          <td>{record.invoice_data?.currency || "MYR"} {Number(record.total_amount || 0).toFixed(2)}</td>
+                          <td>{record.source === "typed" ? "Typed + AI checks" : record.source === "document" ? "Document + AI extraction" : "Imported history"}</td>
+                          <td>{record.email_sent ? "Sent" : "Not sent"}</td>
+                          <td className="history-pdf-links">
+                            {record.preview_url && <a href={record.preview_url} target="_blank" rel="noreferrer">Preview</a>}
+                            {record.download_url && <a href={record.download_url}>Download</a>}
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+
+          {page === "Liggy AI" && (
+            <>
+              <PageHeading
+                eyebrow="LIGGY HELP"
+                title="Ask Liggy"
+                description="Get help with invoice creation, the AI review and approval flow, saved PDFs, customers, and sales reports."
+                action={<span className="ai-agent-badge">Invoice workflow assistant</span>}
+              />
+              <section className="panel chat-panel">
+                <div className="chat-messages" aria-live="polite">
+                  {chatMessages.length === 0 && (
+                    <div className="chat-welcome">
+                      <div className="brand-icon">✦</div>
+                      <div><strong>Hi {user.username}, I’m Liggy Help.</strong><p className="muted">Ask me how the AI checks an invoice, where to find a PDF, or how reports use your saved invoices.</p></div>
+                    </div>
+                  )}
+                  {chatMessages.map((message, index) => (
+                    <div className={`chat-message ${message.role}`} key={`${index}-${message.role}`}>
+                      <span>{message.role === "assistant" ? "Liggy" : "You"}</span>
+                      <p>{message.text}</p>
+                    </div>
+                  ))}
+                  {chatBusy && <div className="chat-message assistant"><span>Liggy</span><p>Thinking…</p></div>}
+                </div>
+                <form className="chat-composer" onSubmit={sendChatMessage}>
+                  <input aria-label="Message Liggy Help" value={chatInput} onChange={(event) => setChatInput(event.target.value)} maxLength={2000} placeholder="Ask about using Liggy…" />
+                  <button className="primary-button" disabled={chatBusy || !chatInput.trim()}>Send</button>
+                </form>
+                <p className="small-note">Liggy Help answers questions about this app and its invoice workflow. It cannot approve or send invoices for you.</p>
+              </section>
             </>
           )}
 
@@ -688,44 +878,41 @@ function App() {
               <PageHeading
                 eyebrow="SALES ANALYTICS"
                 title="Daily Sales Report"
-                description="Review recorded transactions and payment status."
+                description={`Live summary of approved invoices saved for ${todayKey}. It updates when your invoice records change.`}
                 action={
                   <button
                     className="primary-button"
                     onClick={() => generateReport("daily")}
                     disabled={loading}
                   >
-                    {loading ? "Generating..." : "Generate AI Report"}
+                    {loading ? "Refreshing..." : "Refresh Daily Report"}
                   </button>
                 }
               />
 
               <section className="stats-grid report-stats">
                 <StatCard
-                  label="Recorded Sales"
-                  value={`RM ${totalSales.toFixed(2)}`}
-                  note="All transaction statuses"
+                  label="Invoiced Today"
+                  value={formatCurrencyTotals(todayInvoices) || "MYR 0.00"}
+                  note="From approved invoices"
                   icon="↗"
                 />
                 <StatCard
-                  label="Paid Revenue"
-                  value={`RM ${revenue.toFixed(2)}`}
-                  note="Paid transactions only"
+                  label="Invoices Today"
+                  value={String(todayInvoices.length)}
+                  note="Saved e-invoices"
                   icon="✓"
                 />
                 <StatCard
-                  label="Transactions"
-                  value={String(sales.length)}
-                  note="Number of records"
+                  label="Customers Today"
+                  value={String(new Set(todayInvoices.map((record) => record.customer_name)).size)}
+                  note="Unique customers invoiced"
                   icon="▤"
                 />
                 <StatCard
-                  label="Pending Amount"
-                  value={`RM ${sales
-                    .filter((s) => s.status === "Pending")
-                    .reduce((sum, s) => sum + Number(s.amount), 0)
-                    .toFixed(2)}`}
-                  note="Awaiting payment"
+                  label="Average Invoice"
+                  value={formatCurrencyTotals(todayInvoices, true) || "MYR 0.00"}
+                  note="Today's average by currency"
                   icon="◷"
                 />
               </section>
@@ -735,20 +922,20 @@ function App() {
                   <div>
                     <h2>Sales Transactions</h2>
                     <p className="muted">
-                      Sample data and sales added during this session
+                      Historical invoice records from the database
                     </p>
                   </div>
                   <span className="status-badge paid">
-                    {sales.length} records
+                    {todayInvoices.length} records
                   </span>
                 </div>
-                <TransactionTable sales={[...sales].reverse()} />
+                <TransactionTable sales={todayInvoices.map((record) => ({ id: record.invoice_no, item: record.invoice_no, customer: record.customer_name, amount: record.total_amount, currency: record.invoice_data?.currency || "MYR", status: record.status || "Approved" })).reverse()} />
               </section>
 
               {report && (
                 <section className="panel report-result">
-                  <h2>Generated Daily Report</h2>
-                  <pre>{formatReport(report)}</pre>
+                  <h2>Live Daily Report</h2>
+                  <LiveReportSummary report={report} />
                 </section>
               )}
             </>
@@ -759,45 +946,41 @@ function App() {
               <PageHeading
                 eyebrow="BUSINESS INTELLIGENCE"
                 title="Monthly Insights"
-                description="Understand sales performance and identify opportunities."
+                description={`Live summary of approved invoice activity and customer spend for ${monthKey}. It updates when your invoice records change.`}
                 action={
                   <button
                     className="primary-button"
                     onClick={() => generateReport("monthly")}
                     disabled={loading}
                   >
-                    {loading ? "Generating..." : "Generate AI Insights"}
+                    {loading ? "Refreshing..." : "Refresh Monthly Insights"}
                   </button>
                 }
               />
 
               <section className="stats-grid">
                 <StatCard
-                  label="Recorded Sales"
-                  value={`RM ${totalSales.toFixed(2)}`}
-                  note="Current sample dataset"
+                  label="Invoiced This Month"
+                  value={formatCurrencyTotals(monthInvoices) || "MYR 0.00"}
+                  note="From saved e-invoices"
                   icon="↗"
                 />
                 <StatCard
-                  label="Paid Revenue"
-                  value={`RM ${revenue.toFixed(2)}`}
-                  note="Payments received"
+                  label="Invoices This Month"
+                  value={String(monthInvoices.length)}
+                  note="Saved invoice records"
                   icon="✓"
                 />
                 <StatCard
-                  label="Average Transaction"
-                  value={`RM ${
-                    sales.length
-                      ? (totalSales / sales.length).toFixed(2)
-                      : "0.00"
-                  }`}
-                  note="Recorded sales per transaction"
+                  label="Average Invoice"
+                  value={formatCurrencyTotals(monthInvoices, true) || "MYR 0.00"}
+                  note="Monthly average by currency"
                   icon="◷"
                 />
                 <StatCard
-                  label="Pending Orders"
-                  value={String(sales.filter((s) => s.status === "Pending").length)}
-                  note="Follow up on payments"
+                  label="Customers Invoiced"
+                  value={String(new Set(monthInvoices.map((record) => record.customer_name)).size)}
+                  note="Unique customers this month"
                   icon="▤"
                 />
               </section>
@@ -809,19 +992,19 @@ function App() {
                     Revenue distribution across your recorded transactions.
                   </p>
 
-                  {sales.map((sale) => (
-                    <div className="bar-row" key={sale.id}>
+                  {monthInvoices.map((record) => (
+                    <div className="bar-row" key={record.invoice_no}>
                       <div className="bar-label">
-                        <span>{sale.item}</span>
-                        <strong>RM {Number(sale.amount).toFixed(2)}</strong>
+                        <span>{record.customer_name} · {record.invoice_no}</span>
+                        <strong>{record.invoice_data?.currency || "MYR"} {Number(record.total_amount).toFixed(2)}</strong>
                       </div>
                       <div className="bar-track">
                         <div
                           className="bar-fill"
                           style={{
                             width: `${
-                              totalSales
-                                ? (sale.amount / totalSales) * 100
+                              amountForCurrency(monthInvoices, record.invoice_data?.currency || "MYR")
+                                ? (record.total_amount / amountForCurrency(monthInvoices, record.invoice_data?.currency || "MYR")) * 100
                                 : 0
                             }%`,
                           }}
@@ -842,11 +1025,9 @@ function App() {
                     <div>
                       <strong>Highest-value transaction</strong>
                       <p>
-                        {sales.length
-                          ? `${[...sales]
-                              .sort((a, b) => b.amount - a.amount)[0].item} — RM ${Math.max(
-                              ...sales.map((s) => Number(s.amount))
-                            ).toFixed(2)}`
+                        {monthInvoices.length
+                          ? `${[...monthInvoices]
+                              .sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0].customer_name} — ${formatCurrencyTotals([ [...monthInvoices].sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0] ])}`
                           : "No transactions yet"}
                       </p>
                     </div>
@@ -855,11 +1036,11 @@ function App() {
                   <div className="insight-item">
                     <span className="insight-icon">✓</span>
                     <div>
-                      <strong>Collection rate</strong>
+                      <strong>AI-supported invoices</strong>
                       <p>
-                        {totalSales
-                          ? `${((revenue / totalSales) * 100).toFixed(1)}% of recorded sales value is paid.`
-                          : "Add sales to calculate your collection rate."}
+                        {monthInvoices.length
+                          ? `${monthInvoices.filter((record) => ["typed", "document"].includes(record.source)).length} of ${monthInvoices.length} invoices passed through Liggy's agent workflow.`
+                          : "Approved invoices will appear here automatically."}
                       </p>
                     </div>
                   </div>
@@ -867,11 +1048,11 @@ function App() {
                   <div className="insight-item">
                     <span className="insight-icon">!</span>
                     <div>
-                      <strong>Recommended action</strong>
+                      <strong>Customer follow-up</strong>
                       <p>
-                        {sales.some((s) => s.status === "Pending")
-                          ? "Follow up on pending payments to improve cash flow."
-                          : "Continue recording sales to build a useful trend."}
+                        {monthInvoices.some((record) => !record.email_sent && !record.invoice_data?.customer_email)
+                          ? "Some customers do not have an email address saved. Add one in Customer Records for future invoice delivery."
+                          : "Customer email details are available for invoice follow-up."}
                       </p>
                     </div>
                   </div>
@@ -880,15 +1061,13 @@ function App() {
 
               {report && (
                 <section className="panel report-result">
-                  <h2>Generated Monthly Insights</h2>
-                  <pre>{formatReport(report)}</pre>
+                  <h2>Live Monthly Insights</h2>
+                  <LiveReportSummary report={report} />
                 </section>
               )}
 
               <p className="small-note">
-                These figures currently use sample and session-only data, not a
-                complete calendar-month database. Historical comparisons will
-                require dated, persistent sales records.
+                These figures use approved invoice records saved in the business database.
               </p>
             </>
           )}
@@ -969,11 +1148,11 @@ function TransactionTable({ sales }) {
                 <strong>{sale.item}</strong>
               </td>
               <td>{sale.customer}</td>
-              <td>RM {Number(sale.amount).toFixed(2)}</td>
+              <td>{sale.currency || "MYR"} {Number(sale.amount).toFixed(2)}</td>
               <td>
                 <span
                   className={`status-badge ${
-                    sale.status === "Paid" ? "paid" : "pending"
+                    sale.status === "Pending" ? "pending" : "paid"
                   }`}
                 >
                   {sale.status}
@@ -987,10 +1166,86 @@ function TransactionTable({ sales }) {
   );
 }
 
-function formatReport(report) {
-  return typeof report === "string"
-    ? report
-    : JSON.stringify(report, null, 2);
+function LiveReportSummary({ report }) {
+  if (!report) return <p className="muted">Loading saved invoice activity…</p>;
+  const totals = Object.entries(report.total_invoiced || {});
+  return (
+    <div className="live-report-summary">
+      <div className="live-report-totals">
+        <div><span>Period</span><strong>{report.period}</strong></div>
+        <div><span>Invoices</span><strong>{report.invoice_count}</strong></div>
+        <div><span>Customers</span><strong>{report.customer_count}</strong></div>
+        <div><span>Invoiced total</span><strong>{totals.length ? totals.map(([currency, amount]) => `${currency} ${Number(amount).toFixed(2)}`).join(" · ") : "MYR 0.00"}</strong></div>
+      </div>
+      {report.invoices.length ? (
+        <div className="table-wrapper">
+          <table>
+            <thead><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Total</th></tr></thead>
+            <tbody>{report.invoices.map((invoice) => (
+              <tr key={invoice.invoice_no}>
+                <td><strong>{invoice.invoice_no}</strong></td>
+                <td>{invoice.customer_name || "—"}</td>
+                <td>{invoice.date || "—"}</td>
+                <td>{invoice.currency || "MYR"} {Number(invoice.total_amount || 0).toFixed(2)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : <p className="muted">No approved invoices are saved for this period yet.</p>}
+    </div>
+  );
+}
+
+function buildSalesReport(invoices, type) {
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const month = day.slice(0, 7);
+  const records = invoices.filter((record) => {
+    const recordDate = (record.invoice_date || record.created_at || "").slice(0, 10);
+    return type === "daily" ? recordDate === day : recordDate.startsWith(month);
+  });
+  return {
+    period: type === "daily" ? day : month,
+    invoice_count: records.length,
+    customer_count: new Set(records.map((record) => record.customer_name)).size,
+    total_invoiced: currencyTotals(records),
+    invoices: records.map(({ invoice_no, customer_name, total_amount, invoice_date, created_at, invoice_data }) => ({
+      invoice_no,
+      customer_name,
+      total_amount,
+      currency: invoice_data?.currency || "MYR",
+      date: invoice_date || created_at,
+    })),
+  };
+}
+
+function currencyTotals(records) {
+  return records.reduce((totals, record) => {
+    const currency = record.invoice_data?.currency || "MYR";
+    totals[currency] = (totals[currency] || 0) + Number(record.total_amount || 0);
+    return totals;
+  }, {});
+}
+
+function formatCurrencyTotals(records, average = false) {
+  const totals = currencyTotals(records);
+  const counts = records.reduce((result, record) => {
+    const currency = record.invoice_data?.currency || "MYR";
+    result[currency] = (result[currency] || 0) + 1;
+    return result;
+  }, {});
+  return Object.entries(totals)
+    .map(([currency, value]) => `${currency} ${((average ? value / counts[currency] : value) || 0).toFixed(2)}`)
+    .join(" · ");
+}
+
+function amountForCurrency(records, currency) {
+  return currencyTotals(records)[currency] || 0;
+}
+
+function formatCustomerSpend(spend = {}) {
+  const entries = Object.entries(spend);
+  return entries.length ? entries.map(([currency, total]) => `${currency} ${Number(total).toFixed(2)}`).join(" · ") : "—";
 }
 
 export default App;

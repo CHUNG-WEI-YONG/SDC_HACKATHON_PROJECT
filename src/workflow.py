@@ -8,6 +8,9 @@ def approval_router(state: AgentState):
         return END
     return "store"
 
+def invoice_source_router(state: AgentState):
+    return "verify" if state.get("invoice_data") else "extract"
+
 def build_workflow(llm):
     builder = StateGraph(AgentState)
 
@@ -15,7 +18,13 @@ def build_workflow(llm):
     builder.add_node("verify", verification_node)
     builder.add_node("store", store_node)
 
-    builder.add_edge(START, "extract")
+    builder.add_node("source", lambda state: state)
+    builder.add_edge(START, "source")
+    builder.add_conditional_edges(
+        "source",
+        invoice_source_router,
+        {"extract": "extract", "verify": "verify"}
+    )
     builder.add_edge("extract", "verify")
     builder.add_conditional_edges(
         "verify",

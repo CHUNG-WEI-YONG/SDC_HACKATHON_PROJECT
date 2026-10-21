@@ -1,94 +1,54 @@
-
 import OpenAI from "openai";
 
-const instructions = `
-You are Liggy, an AI assistant for small businesses.
+const refusal = "I can help with Liggy: creating and reviewing e-invoices, uploading invoice documents, customer records, invoice history and PDFs, daily or monthly reports, account access, and the AI invoice workflow. I can’t help with unrelated topics.";
 
-Help users with:
-- Everyday business administration
-- Preparing invoice drafts
-- Extracting information from descriptions of sales
-- Identifying missing information
+const appTopics = /\b(liggy|e[- ]?invoice|invoice|customer|business record|daily sales|monthly insight|sales report|agentic|agent workflow|ai workflow|ai (?:invoice|agent|check|review|extract)|approve|approval|preview|pdf|download|upload|history|email|sign in|sign out|log in|log out|account|password|saved data|database)\b|\bhow (?:do|can) i use (?:this|the) app\b|\bhow to use liggy\b|\bwhat can liggy do\b/i;
+const greetings = /^(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you)[!. ]*$/i;
+const followUp = /\b(it|that|this|them|those|after that|what next|then|also|where do i|how about|what about|can i)\b/i;
 
-Be friendly, clear, and practical.
+const instructions = `You are Liggy Help, the in-app assistant for the Liggy e-invoice and business records application. Answer only questions about how to use Liggy and its features. Refuse all unrelated requests briefly and direct the user back to Liggy help topics.
 
-When a user asks for an invoice:
-1. Extract only information provided by the user.
-2. Never invent a buyer name, email, date, or price.
-3. Use null for missing values.
-4. Calculate the subtotal only when quantity and unit price
-   are both known.
-5. Do not invent tax rates or claim legal compliance.
-6. Explain which information needs to be checked.
-7. Remind the user to review the draft before using it.
+Liggy workflow facts:
+- Users create an account with username, email, and password. Each account has separate customers, invoices, and reports.
+- On E-Invoice, a user can type invoice details or upload a supported document (PDF, image, TXT, JSON, or CSV).
+- The invoice agent extracts or checks invoice details and prepares a draft. The user should review and edit the displayed fields and preview before approving.
+- Approving saves the invoice PDF and invoice history, updates that account's customer record, and feeds the daily sales report and monthly insights. Rejecting does not save an approved invoice.
+- A customer email is optional. After save, Liggy asks whether to send the invoice when an email address is available. Email delivery also requires the app owner to configure SMTP.
+- Saved PDFs can be previewed or downloaded from the invoice screen and Invoice History.
+- Daily Sales Report summarizes approved invoices dated today; Monthly Insights summarizes the current month. Both are based on saved invoices for the signed-in account.
+- Do not claim that you can see, change, approve, or send a user's records. Explain where the user can do those actions in the app.
+- Do not give tax or legal compliance guarantees. Recommend checking the invoice details before approval.
 
-For other requests, answer helpfully and set invoice to null.
+Respond in plain, concise language. If the question is ambiguous, ask one short follow-up. Return JSON with shape {"reply":"..."}.`;
 
-Return valid JSON with this exact shape:
-{
-  "reply": "Your response to the user",
-  "invoice": null
-}
-
-When an invoice is requested, replace null with an object
-containing:
-buyer_name, buyer_email, description, quantity,
-unit_price, currency, invoice_date, total_before_tax,
-and missing_fields.
-
-Use strings for text fields, numbers for quantity and prices,
-null for unknown fields, and an array of strings for missing_fields.
-`;
-
-export async function processMessage(message) {
+export async function processMessage(message, history = []) {
+  const trimmed = String(message || "").trim();
+  if (trimmed.length > 2000) throw new Error("Message is too long.");
+  if (greetings.test(trimmed)) return { reply: "Hi! I’m Liggy Help. Ask me how to create or review an invoice, find a saved PDF, manage customer records, or read your sales reports." };
+  const previousUserAskedAboutLiggy = history.some((entry) => entry.role === "user" && appTopics.test(entry.content));
+  const inScope = appTopics.test(trimmed) || (followUp.test(trimmed) && previousUserAskedAboutLiggy);
+  if (!inScope) return { reply: refusal };
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is missing from server/.env");
+    return { reply: "I can explain the Liggy workflow, but the AI help service is not configured yet. Set OPENAI_API_KEY in liggy/server/.env, restart the backend, and try again." };
   }
 
   const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL || process.env.OPENAI_URL || undefined,
   });
-
   const response = await client.chat.completions.create({
     model: process.env.OPENAI_MODEL || "gpt-4o-mini",
     messages: [
-      {
-        role: "system",
-        content: instructions
-      },
-      {
-        role: "user",
-        content: message
-      }
+      { role: "system", content: instructions },
+      ...history.slice(-8).map(({ role, content }) => ({ role, content })),
+      { role: "user", content: trimmed },
     ],
-    response_format: {
-      type: "json_object"
-    },
-    temperature: 0.2
+    response_format: { type: "json_object" },
+    temperature: 0.1,
   });
 
   const content = response.choices[0]?.message?.content;
-
-  if (!content) {
-    throw new Error("The AI returned an empty response.");
-  }
-
+  if (!content) throw new Error("Liggy Help returned an empty response.");
   const result = JSON.parse(content);
-
-  if (result.invoice) {
-    const invoice = result.invoice;
-
-    if (
-      typeof invoice.quantity === "number" &&
-      typeof invoice.unit_price === "number"
-    ) {
-      invoice.total_before_tax = Number(
-        (invoice.quantity * invoice.unit_price).toFixed(2)
-      );
-    } else {
-      invoice.total_before_tax = null;
-    }
-  }
-
-  return result;
+  return { reply: typeof result.reply === "string" && result.reply.trim() ? result.reply.trim() : refusal };
 }
