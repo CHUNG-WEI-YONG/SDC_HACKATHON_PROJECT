@@ -1,12 +1,12 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from schema import AgentState
-from agents import create_extraction_node, verification_node, store_node
+from .schema import AgentState
+from .agents import create_extraction_node, verification_node, store_node
 
 def approval_router(state: AgentState):
-    if state.get("manager_approval") is True:
-        return "store"
-    return END
+    if state.get("manager_approval") is False:
+        return END
+    return "store"
 
 def build_workflow(llm):
     builder = StateGraph(AgentState)

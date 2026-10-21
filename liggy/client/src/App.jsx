@@ -22,6 +22,10 @@ function App() {
     date: new Date().toISOString().slice(0, 10),
   });
   const [invoiceResult, setInvoiceResult] = useState(null);
+  const [agentReview, setAgentReview] = useState(null);
+  const [agentDecision, setAgentDecision] = useState("");
+  const [agentPdf, setAgentPdf] = useState(null);
+  const [invoiceFile, setInvoiceFile] = useState(null);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -65,6 +69,65 @@ function App() {
           ? "Cannot connect to the backend. Make sure your server is running."
           : err.message
       );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function analyzeInvoice(event) {
+    event.preventDefault();
+    if (!invoiceFile) {
+      setError("Choose an invoice document to upload.");
+      return;
+    }
+    setError("");
+    setAgentReview(null);
+    setAgentDecision("");
+    setAgentPdf(null);
+    setLoading(true);
+
+    try {
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("Unable to read the selected file."));
+        reader.readAsDataURL(invoiceFile);
+      });
+      const response = await fetch("/api/invoices/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: invoiceFile.name, content }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to analyze invoice.");
+      setAgentReview(data);
+    } catch (err) {
+      setError(err.message.includes("fetch")
+        ? "Cannot connect to the backend. Make sure the Liggy server and Python invoice agent are running."
+        : err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function decideInvoice(decision) {
+    if (!agentReview?.thread_id) return;
+    setError("");
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/invoices/${decision}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: agentReview.thread_id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to save invoice decision.");
+      setAgentDecision(data.message || data.status);
+      if (data.preview_url && data.download_url) {
+        setAgentPdf({ previewUrl: data.preview_url, downloadUrl: data.download_url });
+      }
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -345,6 +408,77 @@ function App() {
                 title="E-Invoice Assistant"
                 description="Enter your transaction details to prepare an invoice draft."
               />
+
+              <section className="panel invoice-agent-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Review an Existing Invoice</h2>
+                    <p className="muted">
+                      Upload a document for Liggy’s extraction and verification agent to review before saving it.
+                    </p>
+                  </div>
+                </div>
+                <form className="invoice-agent-upload" onSubmit={analyzeInvoice}>
+                  <Field label="Invoice document (PDF, image, TXT, JSON, or CSV; up to 10 MB)">
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.json,.csv"
+                      onChange={(event) => setInvoiceFile(event.target.files?.[0] || null)}
+                      required
+                    />
+                  </Field>
+                  <button className="primary-button" disabled={loading}>
+                    {loading ? "Analyzing invoice..." : "Analyze Invoice →"}
+                  </button>
+                </form>
+
+                {agentReview && (
+                  <div className="agent-review-result">
+                    <h3>Extracted invoice details</h3>
+                    <pre>{JSON.stringify(agentReview.state?.invoice_data || {}, null, 2)}</pre>
+                    {agentReview.state?.verification_errors?.length > 0 && (
+                      <div className="agent-verification-errors">
+                        <strong>Items to review</strong>
+                        <ul>{agentReview.state.verification_errors.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                      </div>
+                    )}
+                    {agentReview.state?.is_verified && (
+                      <p className="agent-verified">Invoice checks passed. Review the extracted details before approving.</p>
+                    )}
+                    {!agentDecision ? (
+                      <div className="agent-decision-actions">
+                        <button className="primary-button" onClick={() => decideInvoice("approve")} disabled={loading}>
+                          {loading ? "Saving..." : "Approve and Save PDF"}
+                        </button>
+                        <button className="secondary-button" onClick={() => decideInvoice("reject")} disabled={loading}>
+                          Reject Invoice
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="agent-saved-invoice">
+                        <div className="success-banner">{agentDecision}</div>
+                        {agentPdf && (
+                          <>
+                            <div className="agent-pdf-actions">
+                              <a className="primary-button" href={agentPdf.downloadUrl}>
+                                Download PDF
+                              </a>
+                              <a className="secondary-button" href={agentPdf.previewUrl} target="_blank" rel="noreferrer">
+                                Open in New Tab
+                              </a>
+                            </div>
+                            <iframe
+                              className="agent-pdf-preview"
+                              src={agentPdf.previewUrl}
+                              title="Approved invoice PDF preview"
+                            />
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
 
               <div className="two-column-layout">
                 <section className="panel">

@@ -7,7 +7,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 
-INVOICE_OUTPUT_DIR = "generated_invoices"
+INVOICE_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_invoices")
 
 
 

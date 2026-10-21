@@ -3,6 +3,9 @@ from pydantic import BaseModel , Field
 
 class LineItem(BaseModel):
     description:str=Field(description="Name or description of the product or service")
+    quantity: float = Field(default=1, description="Quantity billed")
+    unit_price: float = Field(default=0, description="Price per unit before tax")
+    total: Optional[float] = Field(default=None, description="Line total before tax")
 
 
 class EInvoiceData(BaseModel):
@@ -25,3 +28,4 @@ class AgentState(TypedDict):
     is_verified: bool                      
     manager_approval: Optional[bool]       
     rejection_reason: Optional[str]
+    generated_pdf_path: Optional[str]

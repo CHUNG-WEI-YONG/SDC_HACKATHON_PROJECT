@@ -7,14 +7,17 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 # Load .env from project root
+source_env_path = Path(__file__).resolve().parent / ".env"
 root_env_path = Path(__file__).resolve().parent.parent / ".env"
-if root_env_path.exists():
+if source_env_path.exists():
+    load_dotenv(dotenv_path=source_env_path)
+elif root_env_path.exists():
     load_dotenv(dotenv_path=root_env_path)
 else:
     load_dotenv()
 
 API_KEY = os.getenv("OPENAI_API_KEY")
-URL = os.getenv("OPENAI_URL", "https://api.deepseek.com")
+URL = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL", "https://api.deepseek.com")
 MODEL = os.getenv("OPENAI_MODEL", "deepseek-flash")
 
 def encode_bytes_to_base64(image_bytes: bytes) -> str:

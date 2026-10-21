@@ -1,11 +1,15 @@
 import os
 import uuid
+from pathlib import Path
 from typing import Dict, Any, Tuple
 from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
 
-from database import init_db
-from workflow import build_workflow
-from document_reader import read_document
+from .database import init_db
+from .workflow import build_workflow
+from .document_reader import read_document
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 class InvoicePipelineService:
     def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com", model: str = "deepseek-flash"):
@@ -14,7 +18,7 @@ class InvoicePipelineService:
             raise ValueError("API key must be provided.")
 
         self.api_key = api_key
-        self.base_url = base_url
+        self.base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL") or base_url
         self.model = model
 
         # Ensure SQLite tables exist
@@ -55,7 +59,8 @@ class InvoicePipelineService:
             "verification_errors": [],
             "is_verified": False,
             "manager_approval": None,
-            "rejection_reason": None
+            "rejection_reason": None,
+            "generated_pdf_path": None
         }
 
         # Run until paused at interrupt_before=['store']
@@ -76,9 +81,11 @@ class InvoicePipelineService:
             self.app.update_state(config, {"manager_approval": True})
             for _ in self.app.stream(None, config=config):
                 pass
+            saved_state = self.app.get_state(config).values
             return {
                 "status": "approved",
-                "message": "e-Invoice approved, PDF saved in generated_invoices/, and logged to database."
+                "message": "e-Invoice approved, PDF saved, and logged to database.",
+                "file_name": os.path.basename(saved_state.get("generated_pdf_path", "")),
             }
         else:
             self.app.update_state(config, {"manager_approval": False, "rejection_reason": reason})
@@ -87,5 +94,4 @@ class InvoicePipelineService:
                 "message": f"e-Invoice rejected. Reason: {reason}"
             }
 
-    
     

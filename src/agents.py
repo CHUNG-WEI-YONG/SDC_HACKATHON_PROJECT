@@ -1,9 +1,9 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from schema import EInvoiceData, AgentState
-from database import get_customer_info, log_invoice_to_db
-from pdf_generators import generate_invoice_pdf
+from .schema import EInvoiceData, AgentState
+from .database import get_customer_info, log_invoice_to_db
+from .pdf_generators import generate_invoice_pdf
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,8 +11,6 @@ API_KEY=os.getenv("OPENAI_API_KEY")
 URL=os.getenv("OPENAI_URL")
 MODEL=os.getenv("OPENAI_MODEL")
 
-
-llm = ChatOpenAI(model=MODEL,openai_api_key=API_KEY,base_url=URL, temperature=0)
 
 def create_extraction_node(llm):
 
@@ -63,7 +61,7 @@ def verification_node(state: AgentState):
 
     # 2. Database CRM match
     customer_name = data.get("customer_name", "")
-    info_record = get_customer_crm(customer_name)
+    info_record = get_customer_info(customer_name)
     if info_record:
         if not data.get("customer_tin"):
             data["customer_tin"] = info_record.get("tin_number", "")
@@ -82,11 +80,10 @@ def store_node(state: AgentState):
     data = state["invoice_data"]
     pdf_path = generate_invoice_pdf(data)
     log_invoice_to_db(data, pdf_path)
-    return state
+    return {**state, "generated_pdf_path": pdf_path}
 
 
 
 
 
-    
     
