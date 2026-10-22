@@ -1,16 +1,61 @@
-# Liggy — agentic Auto E-Invoice Generator
+# Liggy — Agentic Auto E-Invoice Generator
 
-Liggy is a small-business e-invoice application. The React website is in `client/`, the Express API is in `server/`, and the Python multi-agent invoice workflow is in `src/`. Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
+Liggy is an AI-assisted e-invoice application for small businesses. It helps users extract and review invoice information, create invoice PDFs, and keep customer and sales records. The React website is in `client/`, the Express API is in `server/`, and the Python multi-agent invoice workflow is in `src/`. Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
+
+> [!IMPORTANT]
+> ## Submission documents and templates
+> Download the required submission templates from the [Google Drive submission folder](https://drive.google.com/drive/folders/1xw7c2aN8N-at8hPEULzkcU76e_FFb0Ef) before completing the submission documents.
 
 ## Team and project
 
-|                  |                                                                        |
-| ---------------- | ---------------------------------------------------------------------- |
-| **Team name**    | Chili Pan MEE Penang                                                   |
-| **Domain**       | Domain 2 — Alpha Red                                                   |
-| **Team leader**  | Tai Kai Xuan                                                           |
-| **Team members** | Soo Jiaquan, Chung Wei Yong, Aaron Ling Ji Hong, Kenneth Saw Chzi Yang |
-| **Project demo** | _Add your demo URL here before sharing or submitting._                 |
+|                         |                                                                        |
+| ----------------------- | ---------------------------------------------------------------------- |
+| **Team name**           | Chili Pan MEE Penang                                                   |
+| **Team domain**         | Domain 2 — Alpha Red                                                   |
+| **SDG track (1–17)**    | _[Fill in the selected SDG number and name]_                           |
+| **Team leader**         | Tai Kai Xuan                                                           |
+| **University**          | _[Fill in university name(s)]_                                         |
+| **Number of members**   | 5                                                                      |
+| **Team members**        | Soo Jiaquan, Tai Kai Xuan, Chung Wei Yong, Aaron Ling Ji Hong, Kenneth Saw Chzi Yang |
+
+## Project links
+
+| Resource | Link |
+| --- | --- |
+| GitHub repository | [SDC_HACKATHON_PROJECT](https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT) |
+| Replit project | _[Add the Replit project URL]_ |
+| Live demo | _[Add the live demo URL]_ |
+| RunPod endpoint | _[Add the public endpoint URL if applicable; never add an API key here]_ |
+| Slide deck | _[Add the slide deck URL]_ |
+| Demo video | _[Add the demo video URL]_ |
+
+## Overview
+
+### Problem
+
+Small businesses need a straightforward way to turn invoice documents into usable records and keep track of customer spending and sales. _[Add your team's specific problem statement and target users here. Describe why this problem matters in 2–4 sentences.]_
+
+### Solution
+
+Liggy combines an invoice workflow with an AI agent that extracts invoice details for the user to review. After approval, the application saves the invoice record and PDF, updates customer and sales views, and keeps the generated invoice available in history. _[Add any project-specific value or differentiator your team wants to highlight.]_
+
+### Key features
+
+- Upload supported invoice documents or enter invoice details manually, then review the extracted information and preview.
+- Use the invoice agent workflow to analyze documents and assist with invoice creation.
+- Save approved invoices and PDFs, and review invoice history, customers, daily sales, and monthly insights.
+- Ask Liggy AI Help questions about the application's invoice and agent workflow.
+
+### Technology stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | React and Vite (`client/`) |
+| Backend API | Node.js and Express (`server/`) |
+| Agent workflow | Python multi-agent invoice workflow (`src/`) |
+| Database | Firebase Cloud Firestore |
+| AI / inference | Configurable OpenAI-compatible model API; RunPod may host/provide the model endpoint |
+| Development and UI design | VS Code for local development; Replit was used for frontend UI design and iteration |
 
 ## Project structure
 
@@ -29,6 +74,18 @@ sdc/
 ├── firebase.json           # Firebase CLI Firestore rules configuration
 └── README.md               # Setup and project guide
 ```
+
+The `submission/` folder is where the team can place completed submission files. Use the official templates from the Google Drive folder above. Rename each file to include the team name where required. Expected documents (confirm exact names in the downloaded templates):
+
+```text
+submission/
+├── SDC2026_ChiliPanMEEPenang_Preliminary.pdf       # [Add completed preliminary submission]
+├── SDC2026_ChiliPanMEEPenang_TechDeclaration.pdf   # [Add completed technology declaration]
+├── SDC2026_ChiliPanMEEPenang_Replit_POU.pdf        # [Add Replit proof of use]
+└── SDC2026_ChiliPanMEEPenang_Runpod_POU.pdf        # [Add RunPod proof of use]
+```
+
+If the official template uses a different year or filename format, follow the template's required naming convention.
 
 The application request path is:
 
@@ -158,13 +215,15 @@ On **E-Invoice**, type invoice details or upload a PDF, JPG/JPEG, PNG, WebP, TXT
 
 ### Replit — frontend design and iteration
 
-Replit was used to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above.
+The team used Replit to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above. Add the Replit project URL in [Project links](#project-links) when it is ready.
 
 The browser talks to the Express API through `/api` requests. Keep provider API keys, Firebase service-account credentials, and other secrets in the backend's root `.env`; never put them in React code or Vite client-side environment variables, where visitors could retrieve them.
 
+**Replit proof of use:** _[Add the completed proof-of-use document at `submission/SDC2026_ChiliPanMEEPenang_Replit_POU.pdf` after downloading and completing the official template.]_
+
 ### RunPod — hosted model inference for the agent
 
-RunPod can host or provide access to the model endpoint used by the invoice agent. The backend launches the Python workflow, and the workflow sends document text or supported invoice images to the configured model API. The AI response is then checked by the workflow; the user reviews and approves the invoice before it is saved to Firestore and rendered as a PDF.
+The team uses RunPod as an AI model API service for the invoice agent. The backend launches the Python workflow, and the workflow sends document text or supported invoice images to the configured model API. The AI response is then checked by the workflow; the user reviews and approves the invoice before it is saved to Firestore and rendered as a PDF. Add the endpoint's public URL (never its secret token) in [Project links](#project-links) if the submission requires it.
 
 Configure the RunPod endpoint in the root `.env`:
 
@@ -174,7 +233,37 @@ Configure the RunPod endpoint in the root `.env`:
 
 The current invoice-agent implementation uses an OpenAI-compatible Chat Completions interface. Its model must support image input and tool/function calling. If Liggy AI Help uses that same endpoint, set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` to compatible values too; its model must support JSON responses. If the RunPod worker exposes a different request format, it needs a server-side adapter before it can work with this code. Do not expose the RunPod token in `client/`.
 
-RunPod is optional for local development if you use another compatible AI provider. Firestore is still needed for sign-in and saved customer/invoice records. The `runpod/` folder is currently documentation space; it does not contain an automatic deployment configuration.
+RunPod is the team's configured AI service; another compatible AI provider can be used for local development by changing the environment values. Firestore is still needed for sign-in and saved customer/invoice records. The `runpod/` folder is currently documentation space; it does not contain an automatic deployment configuration. Add the completed official proof-of-use document at `submission/SDC2026_ChiliPanMEEPenang_Runpod_POU.pdf` when available.
+
+## Challenges and learnings
+
+_[Fill this section in before submission. Describe the main development or integration challenges, how the team addressed them, and what the team learned about agent workflows, invoice processing, security, or deployment.]_
+
+## Future improvements
+
+- [ ] _[Add a planned feature or improvement.]_
+- [ ] _[Add another planned feature or improvement.]_
+
+## Team roles and profiles
+
+| Name | Role | GitHub profile |
+| --- | --- | --- |
+| Tai Kai Xuan | Team leader — _[add project role]_ | _[add profile link or leave blank]_ |
+| Soo Jiaquan | _[add project role]_ | _[add profile link or leave blank]_ |
+| Chung Wei Yong | _[add project role]_ | [@CHUNG-WEI-YONG](https://github.com/CHUNG-WEI-YONG) |
+| Aaron Ling Ji Hong | _[add project role]_ | _[add profile link or leave blank]_ |
+| Kenneth Saw Chzi Yang | _[add project role]_ | _[add profile link or leave blank]_ |
+
+## Submission checklist
+
+- [ ] Confirm the team name and domain are correct in the downloaded submission forms.
+- [ ] Fill in the SDG track and university name(s) above.
+- [ ] Add the Replit project, live demo, RunPod endpoint (if requested), slide deck, and demo video links above.
+- [ ] Complete the preliminary submission and technology declaration using the official templates.
+- [ ] Complete Replit and RunPod proof-of-use documents using the official templates.
+- [ ] Add final submission documents to `submission/` and follow the official filename convention.
+- [ ] Follow the setup steps below to verify the app can run locally.
+- [ ] Check that no API keys, `.env` files, service-account keys, or other secrets are included in submitted files.
 
 ## Run the security and load checks
 

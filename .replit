@@ -1,0 +1,9 @@
+run = "bash ./replit-start.sh"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+# The API is used by the frontend's Vite proxy and is not exposed publicly.
+[[ports]]
+localPort = 3001
