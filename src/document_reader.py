@@ -1,7 +1,9 @@
 import base64
+from io import BytesIO
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pypdf import PdfReader
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
@@ -16,28 +18,50 @@ elif root_env_path.exists():
 else:
     load_dotenv()
 
-API_KEY = os.getenv("OPENAI_API_KEY")
-URL = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL", "https://api.deepseek.com")
-MODEL = os.getenv("OPENAI_MODEL", "deepseek-flash")
-
 def encode_bytes_to_base64(image_bytes: bytes) -> str:
     """Encodes in-memory image bytes to base64."""
     return base64.b64encode(image_bytes).decode("utf-8")
 
-def encode_file_to_base64(file_path: str) -> str:
-    """Encodes a file on disk to base64."""
-    with open(file_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+def normalize_image_for_vision(image_bytes: bytes) -> tuple[str, str]:
+    """Normalize JPEG variants (EXIF orientation, CMYK, grayscale) for vision APIs."""
+    try:
+        with Image.open(BytesIO(image_bytes)) as source:
+            if source.width > 8192 or source.height > 8192:
+                source.thumbnail((8192, 8192), Image.Resampling.LANCZOS)
+            image = ImageOps.exif_transpose(source)
+            image.load()
 
-def describe_image_with_vision(base64_data: str, mime_type: str = "image/jpeg") -> str:
-    """Sends base64 image data to DeepSeek's vision model."""
-    vision_llm = ChatOpenAI(
-        model=MODEL,
-        api_key=API_KEY,
-        base_url=URL,
-        temperature=0
-    )
+            # Vision endpoints are most consistent with ordinary RGB/RGBA images.
+            # Preserve transparency on a white canvas before converting to JPEG.
+            if image.mode in ("RGBA", "LA") or "transparency" in image.info:
+                rgba = image.convert("RGBA")
+                background = Image.new("RGBA", rgba.size, "white")
+                image = Image.alpha_composite(background, rgba).convert("RGB")
+            elif image.mode != "RGB":
+                image = image.convert("RGB")
 
+            normalized = BytesIO()
+            image.save(normalized, format="JPEG", quality=95, optimize=True)
+            return encode_bytes_to_base64(normalized.getvalue()), "image/jpeg"
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as error:
+        raise ValueError("This image could not be decoded. Re-save it as a standard JPG or PNG and upload it again.") from error
+
+
+def describe_image_with_vision(base64_data: str, mime_type: str, vision_llm=None) -> str:
+    """Send an image to the configured invoice model for text transcription."""
+    if vision_llm is None:
+        api_key = os.getenv("APIKEY") or os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL", "https://api.deepseek.com")
+        model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL", "deepseek-flash")
+        if not api_key:
+            raise ValueError("Set APIKEY (or OPENAI_API_KEY) in src/.env to analyze invoice images.")
+        vision_llm = ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=0,
+            extra_body={"thinking": {"type": "disabled"}} if "deepseek.com" in base_url.lower() else None,
+        )
     message = HumanMessage(
         content=[
             {
@@ -55,9 +79,11 @@ def describe_image_with_vision(base64_data: str, mime_type: str = "image/jpeg") 
         ]
     )
     response = vision_llm.invoke([message])
-    return response.content
+    if not isinstance(response.content, str) or not response.content.strip():
+        raise ValueError("The vision model returned no readable invoice text. Try a clearer, closer photo.")
+    return response.content.strip()
 
-def read_document(file_path: str) -> str:
+def read_document(file_path: str, vision_llm=None) -> str:
     """
     Reads PDFs (both digital and scanned images) as well as raw image files.
     """
@@ -91,19 +117,15 @@ def read_document(file_path: str) -> str:
             if page.images:
                 first_image = page.images[0]
                 image_bytes = first_image.data
-                base64_img = encode_bytes_to_base64(image_bytes)
-                
-                # Determine mime type from image file extension
-                img_name = first_image.name.lower()
-                mime = "image/png" if img_name.endswith(".png") else "image/jpeg"
-                return describe_image_with_vision(base64_img, mime)
+                base64_img, mime = normalize_image_for_vision(image_bytes)
+                return describe_image_with_vision(base64_img, mime, vision_llm)
 
         raise ValueError("The PDF contains no digital text and no extractable embedded images.")
 
     # 3. Direct Image Formats (.png, .jpg, .jpeg, .webp)
     if ext in [".png", ".jpg", ".jpeg", ".webp"]:
-        base64_img = encode_file_to_base64(file_path)
-        mime = "image/png" if ext == ".png" else "image/jpeg"
-        return describe_image_with_vision(base64_img, mime)
+        with open(file_path, "rb") as image_file:
+            base64_img, mime = normalize_image_for_vision(image_file.read())
+        return describe_image_with_vision(base64_img, mime, vision_llm)
 
     raise ValueError(f"Unsupported file format: {ext}")

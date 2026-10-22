@@ -57,7 +57,9 @@ class InvoicePipelineService:
         thread_id = f"session-{uuid.uuid4().hex[:8]}"
         config = {"configurable": {"thread_id": thread_id}}
 
-        raw_document_text = read_document(file_path)
+        # Reuse the same configured model client used by the invoice workflow.
+        # This keeps APIKEY/AI_URL/BASEMODEL consistent for image transcription.
+        raw_document_text = read_document(file_path, vision_llm=self.llm)
 
         initial_state = {
             "raw_text": raw_document_text,

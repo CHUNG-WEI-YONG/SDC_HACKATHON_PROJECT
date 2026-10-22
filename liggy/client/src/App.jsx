@@ -212,6 +212,14 @@ function App() {
       setError("Choose an invoice document to upload.");
       return;
     }
+    if (invoiceFile.size === 0) {
+      setError("The selected file is empty. Choose another invoice image or document.");
+      return;
+    }
+    if (invoiceFile.size > 10 * 1024 * 1024) {
+      setError("The invoice file must be 10 MB or smaller.");
+      return;
+    }
     setError("");
     setInvoiceNotice("");
     setAgentReview(null);
