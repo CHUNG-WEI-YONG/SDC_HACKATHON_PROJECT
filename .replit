@@ -39,3 +39,9 @@ outputType = "webview"
 [deployment]
 deploymentTarget = "cloudrun"
 run = "bash ./replit-start.sh"
+
+[userenv]
+
+[userenv.shared]
+OPENAI_BASE_URL = "https://api.deepseek.com"
+OPENAI_MODEL = "deepseek-chat"
