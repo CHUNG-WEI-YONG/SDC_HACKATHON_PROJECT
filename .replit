@@ -1,4 +1,5 @@
 run = "bash ./replit-start.sh"
+modules = ["nodejs-20", "python-3.12", "web"]
 
 [[ports]]
 localPort = 5000
@@ -7,3 +8,6 @@ externalPort = 80
 # The API is used by the frontend's Vite proxy and is not exposed publicly.
 [[ports]]
 localPort = 3001
+
+[nix]
+channel = "stable-25_05"
