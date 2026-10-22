@@ -1,21 +1,54 @@
-# Liggy — run it in VS Code
+# Liggy — agentic Auto E-Invoice Generator
 
-Follow these steps in order to download, configure, and run the whole app on Windows.
+Liggy is a small-business e-invoice application. The React website is in `client/`, the Express API is in `server/`, and the Python multi-agent invoice workflow is in `src/`. Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
 
-## Before you start
+## Team and project
 
-Install these tools:
+|                  |                                                                        |
+| ---------------- | ---------------------------------------------------------------------- |
+| **Team name**    | Chili Pan MEE Penang                                                   |
+| **Domain**       | Domain 2 — Alpha Red                                                   |
+| **Team leader**  | Tai Kai Xuan                                                           |
+| **Team members** | Soo Jiaquan, Chung Wei Yong, Aaron Ling Ji Hong, Kenneth Saw Chzi Yang |
+| **Project demo** | _Add your demo URL here before sharing or submitting._                 |
 
-- [Git](https://git-scm.com/downloads)
-- [Node.js 22 or newer](https://nodejs.org/) (includes npm)
-- [Python 3.10 or newer](https://www.python.org/downloads/)
-- [Visual Studio Code](https://code.visualstudio.com/)
+## Project structure
 
-You also need a Firebase project with **Cloud Firestore** enabled, a Firebase service-account JSON file, and an API key from an OpenAI-compatible AI provider.
+```text
+sdc/
+├── client/                 # React + Vite frontend
+├── server/                 # Express API and Firebase Admin connection
+├── src/                    # Python invoice agent and workflow
+├── tests/                  # API security checks and lightweight load test
+├── docs/                   # Project documentation
+├── runpod/                 # RunPod deployment notes and future assets
+├── submission/             # Final report, slides, and demo materials
+├── generated_invoices/     # PDFs created locally (ignored by Git)
+├── requirements.txt        # Python agent dependencies
+├── .env.example            # Safe template for local configuration
+├── firebase.json           # Firebase CLI Firestore rules configuration
+└── README.md               # Setup and project guide
+```
 
-## 1. Clone the project and open it in VS Code
+The application request path is:
 
-Open PowerShell or the VS Code terminal and run:
+```text
+Browser UI (client/) → API (server/) → invoice agent (src/) → AI model API
+                                             ├── Firestore: users and business records
+                                             └── generated_invoices/: PDF files
+```
+
+This guide uses Windows and PowerShell and starts from a fresh clone.
+
+## Requirements
+
+Install [Git](https://git-scm.com/downloads), [VS Code](https://code.visualstudio.com/), [Node.js 20 or newer](https://nodejs.org/) with npm, and [Python 3.10 or newer](https://www.python.org/downloads/).
+
+The app also needs an OpenAI-compatible AI provider and Firestore to analyze invoices and save account/business data. Email is optional.
+
+## 1. Clone and open the project
+
+In PowerShell, run:
 
 ```powershell
 git clone https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT.git
@@ -23,163 +56,144 @@ cd SDC_HACKATHON_PROJECT
 code .
 ```
 
-If `code .` is not recognized, open VS Code, choose **File → Open Folder**, and select the new `SDC_HACKATHON_PROJECT` folder.
+If `code .` does not work, open VS Code and use **File → Open Folder** to select `SDC_HACKATHON_PROJECT`.
 
-When you already have the project and want to download newer changes, open its folder in VS Code and run:
+## 2. Create the Python environment and install agent requirements
 
-```powershell
-git pull
-```
-
-If you have edited files locally, save your changes before pulling. Do not commit `.env` files, API keys, or Firebase service-account files.
-
-## 2. Install the Python invoice-agent requirements
-
-In the VS Code terminal, make sure the current folder is the project folder, then run:
+Run these commands from the repository root:
 
 ```powershell
-python -m venv .venv
+py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r src\requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## 3. Install the app requirements
+The Python requirements are at the repository root so setup and deployment tools can find them easily. The agent source code remains in `src/`.
 
-In the same terminal, run:
+## 3. Install the website and API packages
+
+From the repository root, run:
 
 ```powershell
-cd liggy\server
+cd server
 npm install
 cd ..\client
 npm install
-cd ..\..
+cd ..
 ```
 
-## 4. Set up your AI API key and model
+Run `npm install` separately in `server/` and `client/`; each folder has its own `package.json` and lockfile.
 
-Get an API key from the AI provider you want to use. This API key is different from your Firebase service-account JSON file. If `src/.env` does not exist yet, copy the AI settings example:
+## 4. Configure AI and Firestore
+
+Copy the root template to create your private configuration file:
 
 ```powershell
-Copy-Item src\.env.example src\.env
+Copy-Item .env.example .env
 ```
 
-In VS Code's Explorer, open `src/.env`. Replace the example values with details from your AI provider:
+Open `.env` in VS Code and replace the example values:
 
 ```dotenv
-# Invoice agent: use a model with image input and function/tool calling
+GOOGLE_CLOUD_PROJECT=your-firebase-project-id
+GOOGLE_APPLICATION_CREDENTIALS=C:/path/to/firebase-service-account.json
+
+PORT=3001
+CLIENT_ORIGIN=http://localhost:5173
+PYTHON_EXECUTABLE=C:/path/to/SDC_HACKATHON_PROJECT/.venv/Scripts/python.exe
+SESSION_SECRET=your-long-random-secret
+
 APIKEY=your_provider_api_key
-AI_URL=https://your_provider_base_url
+AI_URL=https://your-provider-api-base-url/v1
 BASEMODEL=your_vision_and_tool_calling_model
 
-# Liggy Help chatbot: these can be the same provider settings
 OPENAI_API_KEY=your_provider_api_key
-OPENAI_BASE_URL=https://your_provider_base_url
-OPENAI_MODEL=your_json_response_model
+OPENAI_BASE_URL=https://your-provider-api-base-url/v1
+OPENAI_MODEL=your_json_capable_model
 ```
 
-Use the exact base URL and model ID from your provider. The invoice agent needs image input for JPG/PDF scans and function/tool calling to return structured invoice fields. The chatbot model needs JSON response support. If the same model supports all of these, you can enter the same key, URL, and model in both groups. These setting names work with OpenAI-compatible providers; they do not require OpenAI.
+Use your AI provider's documented API base URL and model names. The invoice-agent model must support image inputs and tool/function calling. The Liggy Help model must support JSON output. The `OPENAI_...` values may use the same key, URL, and model as the agent values when that model supports both workflows. These are OpenAI-compatible settings and do not require an OpenAI account.
 
-DeepSeek is optional. If you choose it, an example configuration is:
-
-```dotenv
-APIKEY=your_deepseek_api_key
-AI_URL=https://api.deepseek.com
-BASEMODEL=deepseek-flash
-OPENAI_API_KEY=your_deepseek_api_key
-OPENAI_BASE_URL=https://api.deepseek.com
-OPENAI_MODEL=deepseek-flash
-```
-
-Liggy does not choose a provider or model for you. Set all six AI values in `src/.env`. Keep this file private and do not upload it to GitHub.
-
-## 5. Set up Firebase Firestore
-
-1. Create or select a project in the [Firebase console](https://console.firebase.google.com/).
-2. Create a **Cloud Firestore** database in Native mode.
-3. In **Project settings → Service accounts**, create and download a service-account JSON key.
-4. Store that JSON file somewhere private, outside the project folder.
-
-If `liggy/server/.env` does not exist yet, copy the server settings file:
+For `PYTHON_EXECUTABLE`, use the full path to the virtual environment Python created in Step 2. Forward slashes work in Windows `.env` paths. Generate a random session secret with:
 
 ```powershell
-Copy-Item liggy\server\.env.example liggy\server\.env
+py -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Open `liggy/server/.env` in VS Code. Set these values:
+### Firestore setup
 
-```dotenv
-PYTHON_EXECUTABLE=C:/full/path/to/SDC_HACKATHON_PROJECT/.venv/Scripts/python.exe
-SESSION_SECRET=replace-with-a-long-private-random-value
-GOOGLE_CLOUD_PROJECT=your-firebase-project-id
-GOOGLE_APPLICATION_CREDENTIALS=C:/full/path/to/your-firebase-service-account.json
-```
+For the standard local setup, create a Firebase project, enable **Cloud Firestore**, then create a service-account JSON key in **Project settings → Service accounts**. Save that key outside this repository and set `GOOGLE_CLOUD_PROJECT` and `GOOGLE_APPLICATION_CREDENTIALS` in `.env`. The service account needs permission to access Firestore.
 
-For `PYTHON_EXECUTABLE`, use the full path to the `.venv` created in Step 2. For `GOOGLE_APPLICATION_CREDENTIALS`, use the full path to the service-account JSON file. Keep forward slashes in these `.env` paths. You can generate a session secret by running this in the terminal and copying its output into the file:
+The app uses Firestore even when running locally because sign-in, customer records, and invoice history need a database. For local development without a cloud database, you can use the Firestore Emulator instead: install the Firebase CLI and Java, run `firebase emulators:start --only firestore --project demo-liggy` from the root, then set `GOOGLE_CLOUD_PROJECT=demo-liggy`, `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`, and leave `GOOGLE_APPLICATION_CREDENTIALS` blank. If the emulator selects a different port, use the port it reports. The emulator must stay running while you use the app.
+
+The SMTP fields in `.env.example` are optional. Configure them only if you want Liggy to send invoice PDFs by email.
+
+## 5. Run the backend and website
+
+Open two VS Code terminals. Run both from the repository root before entering the folder commands.
+
+### Terminal 1 — API and Python invoice agent
 
 ```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-
-If you already configured Google Application Default Credentials instead of using a service-account JSON file, leave `GOOGLE_APPLICATION_CREDENTIALS` blank. Local ADC setup instructions are in Google's [guide](https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment).
-
-SMTP settings in this file are optional. Set them only if you want the app to send invoice PDFs by email.
-
-## 6. Run the backend and website
-
-The backend and website need **two VS Code terminals**. In VS Code, choose **Terminal → New Terminal** to open each one.
-
-### Terminal 1 — backend and invoice agent
-
-```powershell
-cd liggy\server
+cd server
 npm start
 ```
 
-Leave this terminal open. The backend starts the Python invoice agent automatically; you do not need to run the agent separately.
+Keep the terminal open. The API launches the Python invoice agent automatically. You do not start the agent separately.
 
 ### Terminal 2 — website
 
 ```powershell
-cd liggy\client
+cd client
 npm run dev
 ```
 
-Leave this terminal open too. Open **http://localhost:5173** in your browser. Create an account or sign in.
+Open [http://localhost:5173](http://localhost:5173) and create an account or sign in. Stop either process with **Ctrl+C** in its terminal.
 
-To stop a server, click its terminal and press **Ctrl+C**.
+## Use the app
 
-## What the app does
+On **E-Invoice**, type invoice details or upload a PDF, JPG/JPEG, PNG, WebP, TXT, JSON, or CSV document (up to 10 MB). Review the extracted fields and preview, then approve or reject. Approved invoices are saved to Firestore and their PDFs are written under `generated_invoices/`. Invoice History lets you preview or download saved PDFs. Customers, Daily Sales Report, and Monthly Insights use the signed-in account's saved invoices. Liggy AI answers questions about these app workflows. Email delivery requires SMTP configuration.
 
-- **E-Invoice:** enter invoice details or upload a PDF, JPG/JPEG, PNG, WebP, TXT, JSON, or CSV file (up to 10 MB). Review the agent's extracted fields, verify the preview, then approve or reject. Approved invoices are saved to Firestore, and their PDFs are saved in `generated_invoices/`.
-- **PDF preview and history:** preview the generated PDF below the approval section, save it to your computer, or open it from **Invoice History**.
-- **Customers:** review customer records and invoice spending.
-- **Daily Sales Report / Monthly Insights:** see totals from the signed-in account's saved invoices.
-- **Liggy AI:** ask how to use the app's invoice workflow and business-record pages.
-- **Email:** after approval, the app can offer to email the PDF if the customer has an email address. Sending requires SMTP settings.
+## How Replit and RunPod fit into the project
 
-Each account has separate records. Firestore stores account, customer, and invoice data; generated PDF files are stored on the server in `generated_invoices/`.
+### Replit — frontend design and iteration
 
-## If something does not start
+Replit was used to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above.
 
-- **AI settings error:** check all six provider settings in `src/.env`, then stop and restart the backend terminal.
-- **`ERR_MODULE_NOT_FOUND` for `firebase-admin` or another server package:** from the project root, run `cd liggy\server` then `npm install`; wait for it to finish successfully before running `npm start`.
-- **Website `npm start` is missing:** in `liggy\client`, use `npm run dev` (the client package defines the Vite `dev` script).
-- **Function/tool-call or JSON response error:** choose a model/provider that supports the features listed in Step 4.
-- **Firestore credential error:** check `GOOGLE_CLOUD_PROJECT`, the service-account path, and that the service account has access to Firestore.
-- **`EPERM` during `npm install` / `npm ci`, or `firebase-admin` is still missing after an interrupted install:** close terminals running Node, open PowerShell in `liggy\server`, remove the incomplete dependency folder with `Remove-Item -Recurse -Force .\node_modules`, then run `npm ci` and wait for it to finish successfully. The server package uses the Node.js version already installed on your computer; it does not need to download a second Node.js executable.
-- **Python agent unavailable:** check that `PYTHON_EXECUTABLE` points to `.venv/Scripts/python.exe` and that the Step 2 install completed.
-- **Email error:** check the SMTP settings. Invoices can still be saved without email configured.
-- **Changed `.env` values:** restart the backend after editing settings.
+The browser talks to the Express API through `/api` requests. Keep provider API keys, Firebase service-account credentials, and other secrets in the backend's root `.env`; never put them in React code or Vite client-side environment variables, where visitors could retrieve them.
 
-For production, use HTTPS, protect credentials, configure backups, and provide persistent storage for the generated PDF files.
+### RunPod — hosted model inference for the agent
 
-## Run security and load checks
+RunPod can host or provide access to the model endpoint used by the invoice agent. The backend launches the Python workflow, and the workflow sends document text or supported invoice images to the configured model API. The AI response is then checked by the workflow; the user reviews and approves the invoice before it is saved to Firestore and rendered as a PDF.
 
-With the backend running, open a second VS Code terminal at the project root and run:
+Configure the RunPod endpoint in the root `.env`:
+
+- `APIKEY` — the private key/token required by the endpoint.
+- `AI_URL` — the endpoint's API base URL, using the format expected by its provider.
+- `BASEMODEL` — the model name or ID expected by the endpoint.
+
+The current invoice-agent implementation uses an OpenAI-compatible Chat Completions interface. Its model must support image input and tool/function calling. If Liggy AI Help uses that same endpoint, set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` to compatible values too; its model must support JSON responses. If the RunPod worker exposes a different request format, it needs a server-side adapter before it can work with this code. Do not expose the RunPod token in `client/`.
+
+RunPod is optional for local development if you use another compatible AI provider. Firestore is still needed for sign-in and saved customer/invoice records. The `runpod/` folder is currently documentation space; it does not contain an automatic deployment configuration.
+
+## Run the security and load checks
+
+With the API running, open another terminal at the repository root:
 
 ```powershell
-node --test testing/app-security.test.mjs
-node testing/load-test.mjs light
+node --test tests/app-security.test.mjs
+node tests/load-test.mjs light
 ```
 
-The test guide explains the optional signed-in check, the `medium` and `stress` load levels, and what the checks cover: [testing/README.md](testing/README.md).
+The load script only calls `/api/health`; it does not create invoices or call the AI provider. See [tests/README.md](tests/README.md) for the optional signed-in test and the `medium` and `stress` levels.
+
+## Troubleshooting
+
+- **`ERR_MODULE_NOT_FOUND` for a server package:** run `cd server` then `npm install`; wait for it to complete before `npm start`.
+- **Website start script not found:** use `npm run dev` from `client/`.
+- **Invoice agent cannot start:** confirm the Python requirements installed and `PYTHON_EXECUTABLE` points to `.venv/Scripts/python.exe`.
+- **AI request fails:** check `APIKEY`, `AI_URL`, `BASEMODEL`, and the matching `OPENAI_...` values in the root `.env`, then restart the backend.
+- **Firestore sign-in or save fails:** verify the Firebase project ID and service-account file path, or confirm the Firestore Emulator is running and `FIRESTORE_EMULATOR_HOST` is correct.
+- **Email fails:** check the SMTP values. Invoice creation and saving work without email delivery configured.
+
+See [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for a folder map. Never commit `.env`, service-account keys, local databases, customer PDFs, generated invoices, or dependency/build folders. For production, use HTTPS, a unique session secret, secured credentials, backups, and persistent file storage.

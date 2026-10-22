@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv(ROOT / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from src.main import InvoicePipelineService  # noqa: E402
 from src.database import (  # noqa: E402

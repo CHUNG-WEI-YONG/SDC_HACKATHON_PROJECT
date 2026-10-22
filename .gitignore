@@ -1,13 +1,47 @@
-# Private configuration and API credentials
+# Environment files and credentials
 .env
-**/.env
+.env.*
 !.env.example
+**/.env
+**/.env.*
 !**/.env.example
+*service-account*.json
+serviceAccountKey.json
 
-# Local environments and Python bytecode
+# Python environments, caches, and test output
 .venv/
+venv/
+__pycache__/
 **/__pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
 
-# Generated invoice PDFs can contain customer information
-generated_invoices/*.pdf
+# Node dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+*.log
+npm-debug.log*
+
+# Local runtime data and temporary files
+generated_invoices/*
+!generated_invoices/.gitkeep
+sme_records.db
+sme_records.db-*
+*.sqlite
+*.sqlite3
+work/
+tmp/
+temp/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

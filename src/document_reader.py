@@ -9,14 +9,10 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
 # Load .env from project root
-source_env_path = Path(__file__).resolve().parent / ".env"
 root_env_path = Path(__file__).resolve().parent.parent / ".env"
-if source_env_path.exists():
-    load_dotenv(dotenv_path=source_env_path)
-elif root_env_path.exists():
-    load_dotenv(dotenv_path=root_env_path)
-else:
-    load_dotenv()
+source_env_path = Path(__file__).resolve().parent / ".env"
+load_dotenv(dotenv_path=root_env_path)
+load_dotenv(dotenv_path=source_env_path)
 
 def encode_bytes_to_base64(image_bytes: bytes) -> str:
     """Encodes in-memory image bytes to base64."""
@@ -54,7 +50,7 @@ def describe_image_with_vision(base64_data: str, mime_type: str, vision_llm=None
         base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL")
         model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL")
         if not api_key or not base_url or not model:
-            raise ValueError("Set APIKEY, AI_URL, and BASEMODEL in src/.env to analyze invoice images.")
+            raise ValueError("Set APIKEY, AI_URL, and BASEMODEL in the project-root .env file to analyze invoice images.")
         vision_llm = ChatOpenAI(
             model=model,
             api_key=api_key,

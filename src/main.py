@@ -11,6 +11,8 @@ from .workflow import build_workflow
 from .document_reader import read_document
 from .agents import verification_node
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 class InvoicePipelineService:
@@ -21,7 +23,7 @@ class InvoicePipelineService:
         model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL") or model
         missing = [name for name, value in (("APIKEY", api_key), ("AI_URL", base_url), ("BASEMODEL", model)) if not value]
         if missing:
-            raise ValueError(f"Set {', '.join(missing)} in src/.env to configure the invoice agent.")
+            raise ValueError(f"Set {', '.join(missing)} in the project-root .env file to configure the invoice agent.")
 
         self.api_key = api_key
         self.base_url = base_url
