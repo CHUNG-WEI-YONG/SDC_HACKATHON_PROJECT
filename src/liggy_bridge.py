@@ -39,8 +39,8 @@ def get_service():
     if service is None:
         service = InvoicePipelineService(
             api_key=os.getenv("APIKEY") or os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL", "https://api.deepseek.com"),
-            model=os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL", "deepseek-flash"),
+            base_url=os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL"),
+            model=os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL"),
         )
     return service
 

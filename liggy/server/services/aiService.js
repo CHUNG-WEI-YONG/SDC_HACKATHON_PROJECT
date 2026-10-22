@@ -28,16 +28,19 @@ export async function processMessage(message, history = []) {
   const previousUserAskedAboutLiggy = history.some((entry) => entry.role === "user" && appTopics.test(entry.content));
   const inScope = appTopics.test(trimmed) || (followUp.test(trimmed) && previousUserAskedAboutLiggy);
   if (!inScope) return { reply: refusal };
-  if (!process.env.OPENAI_API_KEY) {
-    return { reply: "I can explain the Liggy workflow, but the AI help service is not configured yet. Set OPENAI_API_KEY in src/.env, restart the backend, and try again." };
+  const apiKey = process.env.OPENAI_API_KEY;
+  const baseURL = process.env.OPENAI_BASE_URL || process.env.OPENAI_URL;
+  const model = process.env.OPENAI_MODEL;
+  if (!apiKey || !baseURL || !model) {
+    return { reply: "I can explain the Liggy workflow, but the AI help service is not configured yet. Set OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL in src/.env, restart the backend, and try again." };
   }
 
   const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || process.env.OPENAI_URL || "https://api.deepseek.com",
+    apiKey,
+    baseURL,
   });
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "deepseek-flash",
+    model,
     messages: [
       { role: "system", content: instructions },
       ...history.slice(-8).map(({ role, content }) => ({ role, content })),

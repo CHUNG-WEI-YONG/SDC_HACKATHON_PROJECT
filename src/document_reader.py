@@ -51,10 +51,10 @@ def describe_image_with_vision(base64_data: str, mime_type: str, vision_llm=None
     """Send an image to the configured invoice model for text transcription."""
     if vision_llm is None:
         api_key = os.getenv("APIKEY") or os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL", "https://api.deepseek.com")
-        model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL", "deepseek-flash")
-        if not api_key:
-            raise ValueError("Set APIKEY (or OPENAI_API_KEY) in src/.env to analyze invoice images.")
+        base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL")
+        model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL")
+        if not api_key or not base_url or not model:
+            raise ValueError("Set APIKEY, AI_URL, and BASEMODEL in src/.env to analyze invoice images.")
         vision_llm = ChatOpenAI(
             model=model,
             api_key=api_key,

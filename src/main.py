@@ -14,15 +14,18 @@ from .agents import verification_node
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 class InvoicePipelineService:
-    def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com", model: str = "deepseek-flash"):
+    def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
 
         api_key = os.getenv("APIKEY") or api_key
-        if not api_key:
-            raise ValueError("API key must be provided.")
+        base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL") or base_url
+        model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL") or model
+        missing = [name for name, value in (("APIKEY", api_key), ("AI_URL", base_url), ("BASEMODEL", model)) if not value]
+        if missing:
+            raise ValueError(f"Set {', '.join(missing)} in src/.env to configure the invoice agent.")
 
         self.api_key = api_key
-        self.base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL") or base_url
-        self.model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL") or model
+        self.base_url = base_url
+        self.model = model
 
         # Ensure Firebase Admin is initialized before processing requests.
         init_db()
