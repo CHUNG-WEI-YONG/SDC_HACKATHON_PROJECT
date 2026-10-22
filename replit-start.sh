@@ -26,14 +26,25 @@ if [[ ! -d client/node_modules ]]; then
   npm ci --prefix client
 fi
 
-# Liggy's Vite config proxies browser /api requests to this local backend port.
-export PORT=3001
+# Use Vite and its API proxy in the workspace preview. In a published build,
+# Express serves the compiled client and API from the same public port.
+if [[ "${1:-}" == "production" ]]; then
+  export NODE_ENV=production
+  export PORT="${PORT:-5000}"
+else
+  export PORT=3001
+fi
 export PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-$(command -v python3)}"
 export CLIENT_ORIGIN="${CLIENT_ORIGIN:-http://localhost:5000}"
 # Use the system trust store, including the environment's trusted CA certificates.
 # Python HTTP clients otherwise use certifi's separate bundle.
 if [[ -z "${SSL_CERT_FILE:-}" && -f /etc/ssl/certs/ca-certificates.crt ]]; then
   export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+fi
+
+if [[ "${1:-}" == "production" ]]; then
+  echo "Starting Liggy production website and API on port ${PORT}..."
+  exec npm start --prefix server
 fi
 
 npm start --prefix server &

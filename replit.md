@@ -5,9 +5,11 @@ Firebase Firestore database. Do not replace Firestore for Replit setup.
 
 ## Start
 
-Use the Run button (`bash ./replit-start.sh`). The website listens on port 5000
-and proxies relative `/api` requests to Express on internal port 3001. The
-startup script installs missing Node dependencies from the existing lockfiles.
+Use the Run button (`bash ./replit-start.sh`). The preview website listens on
+port 5000 and proxies relative `/api` requests to Express on internal port 3001.
+For publishing, Replit installs the existing Node lockfiles, builds the client,
+then runs `bash ./replit-start.sh production`; Express serves the built client
+and API together on port 5000.
 Python dependencies in `requirements.txt` are installed in Replit's managed
 Python environment; no virtual environment is needed.
 Node.js 22 is required by the imported Firebase Admin dependency.

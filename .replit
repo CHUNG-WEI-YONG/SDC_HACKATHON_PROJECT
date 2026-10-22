@@ -5,6 +5,10 @@ modules = ["python-3.12", "web", "nodejs-22"]
 localPort = 3001
 
 [[ports]]
+localPort = 3002
+externalPort = 3002
+
+[[ports]]
 localPort = 5000
 externalPort = 80
 
@@ -37,8 +41,9 @@ waitForPort = 5000
 outputType = "webview"
 
 [deployment]
-deploymentTarget = "cloudrun"
-run = "bash ./replit-start.sh"
+deploymentTarget = "autoscale"
+run = ["bash", "./replit-start.sh", "production"]
+build = ["bash", "-lc", "npm ci --prefix server && npm ci --prefix client && npm run build --prefix client"]
 
 [userenv]
 

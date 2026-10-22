@@ -178,11 +178,10 @@ app.post("/api/auth/logout", (_req, res) => {
 
 app.get("/api/auth/me", async (req, res) => {
   const session = readSession(req);
-  if (!session) return res.status(401).json({ error: "Not signed in." });
+  if (!session) return res.json({ user: null });
   try {
     const user = await callInvoiceAgent({ action: "get_user", user_id: session.id });
-    if (!user) return res.status(401).json({ error: "Account not found." });
-    res.json({ user });
+    res.json({ user: user || null });
   } catch { res.status(500).json({ error: "Unable to check your account." }); }
 });
 
@@ -393,6 +392,10 @@ app.get("/api/firebase-test", async (req, res) => {
     });
   }
 });
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(projectRoot, "client", "dist")));
+}
 
 app.listen(PORT, () => {
   console.log(`Liggy backend running at http://localhost:${PORT}`);
