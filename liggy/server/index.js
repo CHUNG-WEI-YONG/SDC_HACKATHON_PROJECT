@@ -1,18 +1,16 @@
-import "dotenv/config";
-import { db } from "./firebaseAdmin.js";
+import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { randomUUID, scryptSync, timingSafeEqual, createHmac } from "node:crypto";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { db } from "./firebaseAdmin.js";
 import { processMessage } from "./services/aiService.js";
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(serverDirectory, "..", "..");
 dotenv.config({ path: path.join(serverDirectory, ".env"), override: false });
-// Shared model credentials live with the Python agent; load them as fallback
-// so the Node chatbot uses the same API and model configuration.
 dotenv.config({ path: path.join(projectRoot, "src", ".env"), override: false });
 
 const app = express();

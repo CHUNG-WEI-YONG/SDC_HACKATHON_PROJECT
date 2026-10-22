@@ -13,7 +13,6 @@
     "express": "^5.1.0",
     "firebase-admin": "^14.5.0",
     "multer": "^2.4.0",
-    "node": "^26.12.0",
     "openai": "^5.8.2",
     "pdf-parse": "^1.1.1"
   },
