@@ -6,3 +6,6 @@ dist/
 !.env.example
 serviceAccountKey.json
 *.log
+node_modules/
+.env
+*service-account*.json

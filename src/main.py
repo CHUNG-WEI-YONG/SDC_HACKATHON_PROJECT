@@ -24,7 +24,7 @@ class InvoicePipelineService:
         self.base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL") or base_url
         self.model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL") or model
 
-        # Ensure SQLite tables exist
+        # Ensure Firebase Admin is initialized before processing requests.
         init_db()
 
         # Build dynamic LLM instance

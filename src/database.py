@@ -1,164 +1,165 @@
+"""Firestore persistence for Liggy's Python invoice agent.
+
+Uses the same GOOGLE_APPLICATION_CREDENTIALS / Application Default Credentials
+configuration as the Express Firebase Admin SDK.
+"""
+
 import json
-import sqlite3
-from pathlib import Path
+from datetime import datetime, timezone
+from urllib.parse import quote
 
-DB_PATH = Path(__file__).resolve().parent.parent / "sme_records.db"
+import firebase_admin
+from firebase_admin import firestore
 
 
-def _connect():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def _db():
+    """Return the shared Firestore client, initializing Firebase once per process."""
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app()
+    return firestore.client()
+
+
+def _user(user_id):
+    return _db().collection("users").document(str(user_id))
+
+
+def _invoice_doc(user_id, invoice_no):
+    return _user(user_id).collection("invoices").document(quote(str(invoice_no), safe=""))
 
 
 def init_db():
-    with _connect() as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            password_hash TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-
-        customer_columns = {row[1] for row in conn.execute("PRAGMA table_info(customers)")}
-        if not customer_columns:
-            conn.execute("""CREATE TABLE customers (
-                user_id INTEGER REFERENCES users(id),
-                customer_name TEXT NOT NULL,
-                tin_number TEXT,
-                registration_no TEXT,
-                email TEXT,
-                PRIMARY KEY(user_id, customer_name)
-            )""")
-        elif "user_id" not in customer_columns:
-            conn.execute("ALTER TABLE customers RENAME TO customers_legacy")
-            conn.execute("""CREATE TABLE customers (
-                user_id INTEGER REFERENCES users(id), customer_name TEXT NOT NULL,
-                tin_number TEXT, registration_no TEXT, email TEXT,
-                PRIMARY KEY(user_id, customer_name))""")
-            conn.execute("""INSERT INTO customers(user_id, customer_name, tin_number, registration_no, email)
-                SELECT NULL, customer_name, tin_number, registration_no, email FROM customers_legacy""")
-            conn.execute("DROP TABLE customers_legacy")
-
-        invoice_columns = {row[1] for row in conn.execute("PRAGMA table_info(invoices)")}
-        if not invoice_columns:
-            conn.execute("""CREATE TABLE invoices (
-                user_id INTEGER REFERENCES users(id), invoice_no TEXT NOT NULL,
-                customer_name TEXT, customer_tin TEXT, subtotal REAL, tax REAL, total_amount REAL,
-                file_path TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                seller_name TEXT, invoice_date TEXT, invoice_data TEXT, source TEXT DEFAULT 'document',
-                email_sent INTEGER DEFAULT 0, PRIMARY KEY(user_id, invoice_no))""")
-        elif "user_id" not in invoice_columns:
-            conn.execute("ALTER TABLE invoices RENAME TO invoices_legacy")
-            conn.execute("""CREATE TABLE invoices (
-                user_id INTEGER REFERENCES users(id), invoice_no TEXT NOT NULL,
-                customer_name TEXT, customer_tin TEXT, subtotal REAL, tax REAL, total_amount REAL,
-                file_path TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                seller_name TEXT, invoice_date TEXT, invoice_data TEXT, source TEXT DEFAULT 'document',
-                email_sent INTEGER DEFAULT 0, PRIMARY KEY(user_id, invoice_no))""")
-            legacy = {row[1] for row in conn.execute("PRAGMA table_info(invoices_legacy)")}
-            cols = ["invoice_no", "customer_name", "customer_tin", "subtotal", "tax", "total_amount", "file_path", "status", "created_at", "seller_name", "invoice_date", "invoice_data", "source", "email_sent"]
-            select = [col if col in legacy else ("'document'" if col == "source" else "0" if col == "email_sent" else "NULL") for col in cols]
-            conn.execute(f"INSERT INTO invoices(user_id, {', '.join(cols)}) SELECT NULL, {', '.join(select)} FROM invoices_legacy")
-            conn.execute("DROP TABLE invoices_legacy")
+    """Verify that Firebase credentials and Firestore configuration are usable."""
+    _db()
 
 
 def create_user(username, email, password_hash):
-    with _connect() as conn:
-        first_user = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
-        cursor = conn.execute("INSERT INTO users(username,email,password_hash) VALUES(?,?,?)", (username, email.lower(), password_hash))
-        user_id = cursor.lastrowid
-        if first_user:
-            # The previous app had one shared demo workspace. Give that legacy data
-            # to the first account and preserve it as a separate tenant thereafter.
-            conn.execute("UPDATE invoices SET user_id=? WHERE user_id IS NULL", (user_id,))
-            conn.execute("UPDATE customers SET user_id=? WHERE user_id IS NULL", (user_id,))
-        return {"id": user_id, "username": username, "email": email.lower()}
+    db = _db()
+    normalized_email = email.strip().lower()
+    matches = list(db.collection("users").where("email", "==", normalized_email).limit(1).stream())
+    if matches:
+        raise ValueError("An account with this email already exists.")
+    ref = db.collection("users").document()
+    user = {
+        "id": ref.id,
+        "username": username,
+        "email": normalized_email,
+        "password_hash": password_hash,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    ref.set(user)
+    return {key: user[key] for key in ("id", "username", "email")}
 
 
 def get_user_by_email(email):
-    with _connect() as conn:
-        row = conn.execute("SELECT id, username, email, password_hash FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
-        return dict(row) if row else None
+    matches = _db().collection("users").where("email", "==", email.strip().lower()).limit(1).stream()
+    for doc in matches:
+        return doc.to_dict()
+    return None
 
 
 def get_user_by_id(user_id):
-    with _connect() as conn:
-        row = conn.execute("SELECT id, username, email FROM users WHERE id=?", (user_id,)).fetchone()
-        return dict(row) if row else None
+    doc = _user(user_id).get()
+    if not doc.exists:
+        return None
+    user = doc.to_dict()
+    return {key: user[key] for key in ("id", "username", "email") if key in user}
 
 
-def get_customer_info(name: str, user_id: int):
+def get_customer_info(name: str, user_id: str):
     if not name or not name.strip():
         return None
-    with _connect() as conn:
-        row = conn.execute("SELECT customer_name,tin_number,email FROM customers WHERE user_id=? AND LOWER(customer_name) LIKE LOWER(?)", (user_id, f"%{name}%")).fetchone()
-        return {"customer_name": row[0], "tin_number": row[1], "email": row[2]} if row else None
+    needle = name.strip().casefold()
+    for doc in _user(user_id).collection("customers").stream():
+        row = doc.to_dict()
+        if needle in row.get("customer_name", "").casefold():
+            return {key: row.get(key) for key in ("customer_name", "tin_number", "email")}
+    return None
 
 
-def log_invoice_to_db(invoice_data: dict, file_path: str, user_id: int, status: str = "Approved", source: str = "document"):
-    with _connect() as conn:
-        customer_name = (invoice_data.get("customer_name") or "Unknown customer").strip()
-        existing = conn.execute("SELECT customer_name FROM customers WHERE user_id=? AND LOWER(customer_name)=LOWER(?) LIMIT 1", (user_id, customer_name)).fetchone()
-        if existing:
-            customer_name = existing[0]
-        conn.execute("""INSERT INTO customers(user_id,customer_name,tin_number,registration_no,email) VALUES(?,?,?,?,?)
-            ON CONFLICT(user_id,customer_name) DO UPDATE SET
-            tin_number=CASE WHEN excluded.tin_number!='' THEN excluded.tin_number ELSE customers.tin_number END,
-            registration_no=CASE WHEN excluded.registration_no!='' THEN excluded.registration_no ELSE customers.registration_no END,
-            email=CASE WHEN excluded.email!='' THEN excluded.email ELSE customers.email END""",
-            (user_id, customer_name, invoice_data.get("customer_tin") or "", invoice_data.get("customer_registration_no") or "", invoice_data.get("customer_email") or ""))
-        conn.execute("""INSERT INTO invoices(user_id,invoice_no,seller_name,customer_name,customer_tin,subtotal,tax,total_amount,file_path,status,invoice_date,invoice_data,source)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (user_id, invoice_data["invoice_no"], invoice_data.get("seller_name", ""), customer_name,
-            invoice_data.get("customer_tin", ""), invoice_data["subtotal"], invoice_data["tax"], invoice_data["total_amount"], file_path,
-            status, invoice_data.get("invoice_date") or "", json.dumps(invoice_data), source))
+def log_invoice_to_db(invoice_data: dict, file_path: str, user_id: str, status: str = "Approved", source: str = "document"):
+    customer_name = (invoice_data.get("customer_name") or "Unknown customer").strip()
+    customer_ref = _user(user_id).collection("customers").document(quote(customer_name.casefold(), safe=""))
+    customer = customer_ref.get().to_dict() or {"customer_name": customer_name}
+    # Preserve the original display spelling of an existing customer record.
+    customer_name = customer.get("customer_name", customer_name)
+    for source_key, target_key in (("customer_tin", "tin_number"), ("customer_registration_no", "registration_no"), ("customer_email", "email")):
+        value = invoice_data.get(source_key)
+        if value:
+            customer[target_key] = value
+    customer_ref.set(customer, merge=True)
+
+    invoice_no = str(invoice_data["invoice_no"])
+    invoice = {
+        "invoice_no": invoice_no,
+        "seller_name": invoice_data.get("seller_name", ""),
+        "customer_name": customer_name,
+        "customer_tin": invoice_data.get("customer_tin", ""),
+        "subtotal": invoice_data["subtotal"],
+        "tax": invoice_data["tax"],
+        "total_amount": invoice_data["total_amount"],
+        "file_path": file_path,
+        "status": status,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "invoice_date": invoice_data.get("invoice_date") or "",
+        "invoice_data": json.dumps(invoice_data),
+        "source": source,
+        "email_sent": False,
+    }
+    _invoice_doc(user_id, invoice_no).set(invoice)
 
 
-def get_invoice_history(user_id: int):
-    with _connect() as conn:
-        rows = conn.execute("SELECT * FROM invoices WHERE user_id=? ORDER BY CASE WHEN invoice_date IS NULL OR invoice_date='' THEN created_at ELSE invoice_date END DESC, created_at DESC", (user_id,)).fetchall()
-    history = []
-    for row in rows:
-        item = dict(row)
+def get_invoice_history(user_id: str):
+    rows = [doc.to_dict() for doc in _user(user_id).collection("invoices").stream()]
+    for item in rows:
         try:
-            item["invoice_data"] = json.loads(item.pop("invoice_data") or "{}")
+            item["invoice_data"] = json.loads(item.get("invoice_data") or "{}")
         except (TypeError, json.JSONDecodeError):
             item["invoice_data"] = {}
-        history.append(item)
-    return history
+    return sorted(rows, key=lambda item: (item.get("invoice_date") or item.get("created_at") or "", item.get("created_at") or ""), reverse=True)
 
 
-def get_customers(user_id: int):
-    with _connect() as conn:
-        rows = conn.execute("""SELECT c.customer_name,c.tin_number,c.registration_no,c.email,COUNT(i.invoice_no) invoice_count,MAX(i.created_at) last_invoice_at
-            FROM customers c LEFT JOIN invoices i ON i.user_id=c.user_id AND i.customer_name=c.customer_name
-            WHERE c.user_id=? GROUP BY c.customer_name ORDER BY c.customer_name COLLATE NOCASE""", (user_id,)).fetchall()
-    customers = {r["customer_name"]: {**dict(r), "total_spent_by_currency": {}} for r in rows}
+def get_customers(user_id: str):
+    customers = {}
+    for doc in _user(user_id).collection("customers").stream():
+        row = doc.to_dict()
+        name = row.get("customer_name", "")
+        customers[name] = {**row, "invoice_count": 0, "last_invoice_at": None, "total_spent_by_currency": {}}
     for invoice in get_invoice_history(user_id):
         name = invoice.get("customer_name") or "Unknown customer"
         data = invoice.get("invoice_data") or {}
-        customer = customers.setdefault(name, {"customer_name": name, "tin_number": invoice.get("customer_tin") or "", "registration_no": "", "email": data.get("customer_email", ""), "invoice_count": 0, "last_invoice_at": invoice.get("created_at"), "total_spent_by_currency": {}})
+        customer = customers.setdefault(name, {
+            "customer_name": name,
+            "tin_number": invoice.get("customer_tin") or "",
+            "registration_no": "",
+            "email": data.get("customer_email", ""),
+            "invoice_count": 0,
+            "last_invoice_at": invoice.get("created_at"),
+            "total_spent_by_currency": {},
+        })
+        customer["invoice_count"] += 1
+        if not customer.get("last_invoice_at") or (invoice.get("created_at") or "") > customer["last_invoice_at"]:
+            customer["last_invoice_at"] = invoice.get("created_at")
         currency = data.get("currency") or "MYR"
-        customer["total_spent_by_currency"][currency] = round(customer["total_spent_by_currency"].get(currency, 0) + float(invoice.get("total_amount") or 0), 2)
-    return sorted(customers.values(), key=lambda c: (-sum(c["total_spent_by_currency"].values()), c["customer_name"].lower()))
+        totals = customer["total_spent_by_currency"]
+        totals[currency] = round(totals.get(currency, 0) + float(invoice.get("total_amount") or 0), 2)
+    return sorted(customers.values(), key=lambda row: (-sum(row["total_spent_by_currency"].values()), row["customer_name"].lower()))
 
 
-def get_invoice_by_number(invoice_no: str, user_id: int):
-    with _connect() as conn:
-        row = conn.execute("SELECT * FROM invoices WHERE user_id=? AND invoice_no=?", (user_id, invoice_no)).fetchone()
-    if not row:
+def get_invoice_by_number(invoice_no: str, user_id: str):
+    doc = _invoice_doc(user_id, invoice_no).get()
+    if not doc.exists:
         return None
-    result = dict(row)
+    result = doc.to_dict()
     try:
-        result["invoice_data"] = json.loads(result.pop("invoice_data") or "{}")
+        result["invoice_data"] = json.loads(result.get("invoice_data") or "{}")
     except (TypeError, json.JSONDecodeError):
         result["invoice_data"] = {}
     return result
 
 
-def mark_invoice_email_sent(invoice_no: str, user_id: int):
-    with _connect() as conn:
-        cur = conn.execute("UPDATE invoices SET email_sent=1 WHERE user_id=? AND invoice_no=?", (user_id, invoice_no))
-        return cur.rowcount > 0
+def mark_invoice_email_sent(invoice_no: str, user_id: str):
+    ref = _invoice_doc(user_id, invoice_no)
+    if not ref.get().exists:
+        return False
+    ref.update({"email_sent": True})
+    return True

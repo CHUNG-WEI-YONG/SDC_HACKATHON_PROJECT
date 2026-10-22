@@ -53,7 +53,7 @@ def handle(request):
     if action == "find_user":
         return get_user_by_email(request["email"])
     if action == "get_user":
-        return get_user_by_id(int(request["user_id"]))
+        return get_user_by_id(request["user_id"])
 
     user_id = request.get("user_id")
     if not user_id:
