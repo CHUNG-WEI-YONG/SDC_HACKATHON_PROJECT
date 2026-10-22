@@ -30,6 +30,11 @@ fi
 export PORT=3001
 export PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-$(command -v python3)}"
 export CLIENT_ORIGIN="${CLIENT_ORIGIN:-http://localhost:5000}"
+# Use the system trust store, including the environment's trusted CA certificates.
+# Python HTTP clients otherwise use certifi's separate bundle.
+if [[ -z "${SSL_CERT_FILE:-}" && -f /etc/ssl/certs/ca-certificates.crt ]]; then
+  export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+fi
 
 npm start --prefix server &
 SERVER_PID=$!

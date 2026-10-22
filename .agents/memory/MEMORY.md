@@ -1,0 +1,1 @@
+- [Python TLS trust](python-tls-trust.md) — Python AI requests need the system trust store in this environment; never disable certificate verification.

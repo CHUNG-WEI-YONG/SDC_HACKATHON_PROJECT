@@ -11,6 +11,9 @@ startup script installs missing Node dependencies from the existing lockfiles.
 Python dependencies in `requirements.txt` are installed in Replit's managed
 Python environment; no virtual environment is needed.
 Node.js 22 is required by the imported Firebase Admin dependency.
+The launcher sets `SSL_CERT_FILE` to the system CA bundle when no custom value
+is configured, so Python AI requests use the environment's trusted certificates
+without disabling TLS verification.
 
 ## Required configuration
 
