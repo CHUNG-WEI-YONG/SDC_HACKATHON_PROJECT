@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 import firebase_admin
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 
 def _db():
@@ -35,7 +36,7 @@ def init_db():
 def create_user(username, email, password_hash):
     db = _db()
     normalized_email = email.strip().lower()
-    matches = list(db.collection("users").where("email", "==", normalized_email).limit(1).stream())
+    matches = list(db.collection("users").where(filter=FieldFilter("email", "==", normalized_email)).limit(1).stream())
     if matches:
         raise ValueError("An account with this email already exists.")
     ref = db.collection("users").document()
@@ -51,7 +52,9 @@ def create_user(username, email, password_hash):
 
 
 def get_user_by_email(email):
-    matches = _db().collection("users").where("email", "==", email.strip().lower()).limit(1).stream()
+    matches = _db().collection("users").where(
+        filter=FieldFilter("email", "==", email.strip().lower())
+    ).limit(1).stream()
     for doc in matches:
         return doc.to_dict()
     return None

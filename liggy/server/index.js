@@ -111,7 +111,9 @@ function readSession(req) {
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return data.exp > Date.now() ? { id: Number(data.id) } : null;
+    // Firestore document IDs are strings; coercing one to Number produces NaN
+    // and makes every authenticated lookup target a nonexistent account.
+    return data.exp > Date.now() && data.id != null ? { id: String(data.id) } : null;
   } catch { return null; }
 }
 
