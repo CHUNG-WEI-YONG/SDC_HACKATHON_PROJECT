@@ -149,7 +149,10 @@ app.post("/api/auth/register", async (req, res) => {
     setSession(res, user);
     res.status(201).json({ user });
   } catch (error) {
-    const duplicate = /unique|constraint/i.test(error.message);
+    const duplicate = /unique|constraint|already exists|duplicate/i.test(error.message || "");
+    if (!duplicate) {
+      console.error("Account registration failed:", error.name || "Error", error.code || "unknown");
+    }
     res.status(duplicate ? 409 : 500).json({ error: duplicate ? "An account with this email already exists." : "Unable to create account." });
   }
 });
