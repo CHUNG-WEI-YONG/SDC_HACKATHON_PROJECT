@@ -16,7 +16,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d server/node_modules ]]; then
+if [[ ! -d server/node_modules/@google-cloud/firestore ]]; then
   echo "Installing backend packages..."
   npm ci --prefix server
 fi
@@ -26,17 +26,9 @@ if [[ ! -d client/node_modules ]]; then
   npm ci --prefix client
 fi
 
-if [[ ! -x .venv/bin/python ]]; then
-  echo "Creating Python environment..."
-  python3 -m venv .venv
-fi
-
-echo "Installing invoice-agent requirements..."
-.venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt
-
 # Liggy's Vite config proxies browser /api requests to this local backend port.
 export PORT=3001
-export PYTHON_EXECUTABLE="$ROOT_DIR/.venv/bin/python"
+export PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-$(command -v python3)}"
 export CLIENT_ORIGIN="${CLIENT_ORIGIN:-http://localhost:5000}"
 
 npm start --prefix server &

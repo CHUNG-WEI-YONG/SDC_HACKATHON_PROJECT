@@ -5,18 +5,23 @@ configuration as the Express Firebase Admin SDK.
 """
 
 import json
+import os
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 import firebase_admin
-from firebase_admin import firestore
+from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 
 def _db():
     """Return the shared Firestore client, initializing Firebase once per process."""
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
+        credential_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if credential_json:
+            firebase_admin.initialize_app(credentials.Certificate(json.loads(credential_json)))
+        else:
+            firebase_admin.initialize_app()
     return firestore.client()
 
 
