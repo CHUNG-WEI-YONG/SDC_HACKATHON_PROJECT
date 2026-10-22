@@ -29,15 +29,15 @@ export async function processMessage(message, history = []) {
   const inScope = appTopics.test(trimmed) || (followUp.test(trimmed) && previousUserAskedAboutLiggy);
   if (!inScope) return { reply: refusal };
   if (!process.env.OPENAI_API_KEY) {
-    return { reply: "I can explain the Liggy workflow, but the AI help service is not configured yet. Set OPENAI_API_KEY in liggy/server/.env, restart the backend, and try again." };
+    return { reply: "I can explain the Liggy workflow, but the AI help service is not configured yet. Set OPENAI_API_KEY in src/.env, restart the backend, and try again." };
   }
 
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL || process.env.OPENAI_URL || undefined,
+    baseURL: process.env.OPENAI_BASE_URL || process.env.OPENAI_URL || "https://api.deepseek.com",
   });
   const response = await client.chat.completions.create({
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: process.env.OPENAI_MODEL || "deepseek-flash",
     messages: [
       { role: "system", content: instructions },
       ...history.slice(-8).map(({ role, content }) => ({ role, content })),

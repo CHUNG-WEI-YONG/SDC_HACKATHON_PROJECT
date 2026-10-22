@@ -32,6 +32,8 @@ function App() {
   const [agentReview, setAgentReview] = useState(null);
   const [agentDecision, setAgentDecision] = useState("");
   const [agentPdf, setAgentPdf] = useState(null);
+  const [invoiceNotice, setInvoiceNotice] = useState("");
+  const [historyPreview, setHistoryPreview] = useState(null);
   const [emailPrompt, setEmailPrompt] = useState(null);
   const [emailOutcome, setEmailOutcome] = useState("");
   const [invoiceFile, setInvoiceFile] = useState(null);
@@ -40,6 +42,9 @@ function App() {
   const [error, setError] = useState("");
 
   const totalSalesDisplay = formatCurrencyTotals(invoiceHistory);
+  const savedPdfPreview = agentPdf || (!agentReview && !loading
+    ? invoiceHistory.find((record) => record.preview_url && record.download_url)
+    : null);
 
   async function refreshBusinessData() {
     const response = await fetch("/api/business-data");
@@ -119,6 +124,7 @@ function App() {
   async function createInvoice(event) {
     event.preventDefault();
     setError("");
+    setInvoiceNotice("");
     setEmailOutcome("");
     setLoading(true);
 
@@ -207,6 +213,7 @@ function App() {
       return;
     }
     setError("");
+    setInvoiceNotice("");
     setAgentReview(null);
     setAgentDecision("");
     setAgentPdf(null);
@@ -242,8 +249,14 @@ function App() {
 
   async function decideInvoice(decision) {
     if (!agentReview?.thread_id) return;
+    const reviewBeingDecided = agentReview;
+    // Remove the verification panel as soon as the user makes a decision.
+    // Restore it only if the server rejects the request so they can retry.
+    setAgentReview(null);
     setError("");
+    setInvoiceNotice(decision === "approve" ? "Approving invoice and preparing the PDF preview…" : "Rejecting invoice…");
     setLoading(true);
+    let decisionSaved = false;
     try {
       const response = await fetch(`/api/invoices/${decision}`, {
         method: "POST",
@@ -252,19 +265,83 @@ function App() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to save invoice decision.");
-      setAgentDecision(data.message || data.status);
-      if (data.preview_url && data.download_url) {
-        setAgentPdf({ previewUrl: data.preview_url, downloadUrl: data.download_url });
-      }
+      decisionSaved = true;
+      setAgentDecision("");
       if (decision === "approve") {
+        setInvoiceNotice(data.message || "Invoice approved and saved to your history.");
+        const fileUrl = data.preview_url || (data.file_name
+          ? `/api/invoices/files/${encodeURIComponent(data.file_name)}`
+          : "");
+        const downloadUrl = data.download_url || (fileUrl ? `${fileUrl}?download=1` : "");
+        if (fileUrl && downloadUrl) setAgentPdf({ previewUrl: fileUrl, downloadUrl, invoiceNo: data.invoice_no });
         setEmailPrompt({ invoiceNo: data.invoice_no, email: data.customer_email || "" });
         setEmailOutcome("");
-        await refreshBusinessData();
+        let businessData;
+        try {
+          businessData = await refreshBusinessData();
+        } catch (refreshError) {
+          setError(`Invoice was saved, but business records could not refresh: ${refreshError.message}`);
+        }
+        if (!fileUrl) {
+          const savedInvoice = (businessData?.invoices || []).find((record) => record.invoice_no === data.invoice_no);
+          if (savedInvoice?.preview_url && savedInvoice?.download_url) {
+            setAgentPdf({ previewUrl: savedInvoice.preview_url, downloadUrl: savedInvoice.download_url, invoiceNo: data.invoice_no });
+          } else {
+            setInvoiceNotice("Invoice approved and recorded, but its PDF preview could not be found. Open Invoice History and try Preview there.");
+          }
+        }
+      } else {
+        setInvoiceNotice(data.message || "Invoice rejected. It was not saved to your history.");
+        setAgentPdf(null);
       }
     } catch (err) {
       setError(err.message);
+      if (!decisionSaved) {
+        setAgentReview(reviewBeingDecided);
+        setInvoiceNotice("");
+      }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function savePdfToLocation(url, invoiceNo = "invoice") {
+    if (!url) return;
+    setError("");
+    try {
+      const suggestedName = `${String(invoiceNo || "invoice").replace(/[^a-z0-9._-]/gi, "_")}.pdf`;
+      // Open the native picker directly from the button click, before any await
+      // consumes the browser's transient user activation.
+      const fileHandle = window.showSaveFilePicker
+        ? await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: "PDF document", accept: { "application/pdf": [".pdf"] } }],
+        })
+        : null;
+      const response = await fetch(url, { credentials: "same-origin" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Unable to retrieve this invoice PDF.");
+      }
+      const pdfBlob = await response.blob();
+      if (fileHandle) {
+        const writable = await fileHandle.createWritable();
+        await writable.write(pdfBlob);
+        await writable.close();
+        setInvoiceNotice("PDF saved to the location you selected.");
+      } else {
+        const objectUrl = URL.createObjectURL(pdfBlob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = suggestedName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        setInvoiceNotice("PDF download started. Your browser may use its configured Downloads folder.");
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") setError(err.message || "Unable to save this invoice PDF.");
     }
   }
 
@@ -584,6 +661,34 @@ function App() {
                 )}
               </section>
 
+              {savedPdfPreview && (
+                <section className="panel invoice-generated-pdf">
+                  <div className="panel-heading">
+                    <div>
+                      <p className="eyebrow">APPROVED E-INVOICE</p>
+                      <h2>Generated PDF Preview</h2>
+                      <p className="muted">Invoice {savedPdfPreview.invoiceNo || savedPdfPreview.invoice_no || "saved successfully"}. This is the PDF stored in your invoice history.</p>
+                    </div>
+                    <span className="status-badge draft">SAVED PDF</span>
+                  </div>
+                  <div className="agent-pdf-actions">
+                    <button type="button" className="primary-button" onClick={() => savePdfToLocation(savedPdfPreview.downloadUrl || savedPdfPreview.download_url, savedPdfPreview.invoiceNo || savedPdfPreview.invoice_no)}>Save PDF to…</button>
+                    <a className="secondary-button" href={savedPdfPreview.previewUrl || savedPdfPreview.preview_url} target="_blank" rel="noreferrer">Open PDF</a>
+                  </div>
+                  <iframe key={savedPdfPreview.previewUrl || savedPdfPreview.preview_url} className="agent-pdf-preview invoice-generated-pdf-frame" src={savedPdfPreview.previewUrl || savedPdfPreview.preview_url} title={`Generated PDF for invoice ${savedPdfPreview.invoiceNo || savedPdfPreview.invoice_no || ""}`} />
+                  {emailPrompt && (emailPrompt.email ? (
+                    <div className="email-send-prompt">
+                      <strong>Would you like to send this invoice to {emailPrompt.email}?</strong>
+                      <div className="agent-pdf-actions">
+                        <button type="button" className="primary-button" onClick={sendInvoiceEmail} disabled={loading}>{loading ? "Sending..." : "Yes, send invoice"}</button>
+                        <button type="button" className="secondary-button" onClick={() => { setEmailPrompt(null); setEmailOutcome("Email not sent."); }}>No, skip</button>
+                      </div>
+                    </div>
+                  ) : <p className="small-note">No customer email is on record. The invoice was saved without sending.</p>)}
+                  {emailOutcome && <p className="agent-verified">{emailOutcome}</p>}
+                </section>
+              )}
+
               <div className="two-column-layout">
                 <section className="panel">
                   <h2>Invoice Details</h2>
@@ -715,7 +820,7 @@ function App() {
                       <h2>Invoice Preview</h2>
                       <p className="muted">Review the information before use.</p>
                     </div>
-                    <span className="status-badge draft">{agentDecision && agentPdf ? "SAVED" : "LIVE PREVIEW"}</span>
+                    <span className="status-badge draft">LIVE PREVIEW</span>
                   </div>
 
                   <div className="invoice-preview">
@@ -757,20 +862,8 @@ function App() {
                     <div className="preview-total"><span>Tax</span><strong>{invoice.currency} {Number(invoice.tax || 0).toFixed(2)}</strong></div>
                     <div className="preview-total"><span>Total</span><strong>{invoice.currency} {(invoiceItems.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0) + Number(invoice.tax || 0)).toFixed(2)}</strong></div>
                     {invoice.notes && <p className="small-note">{invoice.notes}</p>}
-                    {agentDecision && <div className="success-banner">{agentDecision}</div>}
-                    {agentPdf && <div className="agent-pdf-actions"><a className="primary-button" href={agentPdf.downloadUrl}>Download PDF</a><a className="secondary-button" href={agentPdf.previewUrl} target="_blank" rel="noreferrer">Open PDF</a></div>}
-                    {agentPdf && <iframe className="agent-pdf-preview" src={agentPdf.previewUrl} title="Saved invoice PDF" />}
-                    {emailPrompt && (emailPrompt.email ? (
-                      <div className="email-send-prompt">
-                        <strong>Invoice saved. Send it to {emailPrompt.email}?</strong>
-                        <div className="agent-pdf-actions">
-                          <button type="button" className="primary-button" onClick={sendInvoiceEmail} disabled={loading}>{loading ? "Sending..." : "Yes, send invoice"}</button>
-                          <button type="button" className="secondary-button" onClick={() => { setEmailPrompt(null); setEmailOutcome("Email not sent."); }}>No, skip</button>
-                        </div>
-                      </div>
-                    ) : <p className="small-note">No customer email is on record. The invoice was saved without sending.</p>)}
-                    {emailOutcome && <p className="agent-verified">{emailOutcome}</p>}
                   </div>
+                  {invoiceNotice && !agentPdf && <div className="success-banner invoice-notice">{invoiceNotice}</div>}
                 </section>
               </div>
             </>
@@ -828,8 +921,8 @@ function App() {
                           <td>{record.source === "typed" ? "Typed + AI checks" : record.source === "document" ? "Document + AI extraction" : "Imported history"}</td>
                           <td>{record.email_sent ? "Sent" : "Not sent"}</td>
                           <td className="history-pdf-links">
-                            {record.preview_url && <a href={record.preview_url} target="_blank" rel="noreferrer">Preview</a>}
-                            {record.download_url && <a href={record.download_url}>Download</a>}
+                            {record.preview_url && <button type="button" onClick={() => setHistoryPreview(record)}>Preview</button>}
+                            {record.download_url && <button type="button" onClick={() => savePdfToLocation(record.download_url, record.invoice_no)}>Save PDF</button>}
                           </td>
                         </tr>
                       ))}</tbody>
@@ -1072,6 +1165,24 @@ function App() {
             </>
           )}
         </div>
+        {historyPreview && (
+          <div className="pdf-modal-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setHistoryPreview(null); }}>
+            <section className="pdf-modal panel" role="dialog" aria-modal="true" aria-label={`Invoice ${historyPreview.invoice_no} PDF preview`}>
+              <div className="panel-heading">
+                <div>
+                  <h2>{historyPreview.invoice_no || "Invoice"}</h2>
+                  <p className="muted">Generated invoice PDF</p>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => setHistoryPreview(null)}>Close</button>
+              </div>
+              <div className="agent-pdf-actions">
+                <button type="button" className="primary-button" onClick={() => savePdfToLocation(historyPreview.download_url, historyPreview.invoice_no)}>Save PDF to…</button>
+                <a className="secondary-button" href={historyPreview.preview_url} target="_blank" rel="noreferrer">Open in new tab</a>
+              </div>
+              <iframe className="agent-pdf-preview" src={historyPreview.preview_url} title={`Invoice ${historyPreview.invoice_no} PDF`} />
+            </section>
+          </div>
+        )}
       </main>
     </div>
   );

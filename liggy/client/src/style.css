@@ -343,10 +343,15 @@ button:disabled {
   gap: 10px;
 }
 
-.history-pdf-links a {
+.history-pdf-links a,
+.history-pdf-links button {
   color: var(--green-dark);
   font-weight: 700;
   text-decoration: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
 }
 
 .agent-review-result {
@@ -415,6 +420,61 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 9px;
   background: white;
+}
+
+.saved-invoice-preview {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.invoice-generated-pdf {
+  margin-bottom: 24px;
+}
+
+.invoice-generated-pdf-frame {
+  min-height: min(72vh, 820px);
+}
+
+.saved-pdf-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.saved-pdf-heading p {
+  margin: 6px 0 0;
+}
+
+.saved-pdf-heading .agent-pdf-actions {
+  margin: 0;
+}
+
+.invoice-notice {
+  margin-top: 16px;
+}
+
+.pdf-modal-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(15 24 19 / 65%);
+}
+
+.pdf-modal {
+  width: min(1100px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: white;
+}
+
+.pdf-modal .agent-pdf-preview {
+  min-height: min(70vh, 760px);
 }
 
 .welcome-section,

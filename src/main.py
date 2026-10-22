@@ -16,12 +16,13 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 class InvoicePipelineService:
     def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com", model: str = "deepseek-flash"):
 
+        api_key = os.getenv("APIKEY") or api_key
         if not api_key:
             raise ValueError("API key must be provided.")
 
         self.api_key = api_key
-        self.base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL") or base_url
-        self.model = model
+        self.base_url = os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL") or base_url
+        self.model = os.getenv("BASEMODEL") or os.getenv("OPENAI_MODEL") or model
 
         # Ensure SQLite tables exist
         init_db()
@@ -31,7 +32,10 @@ class InvoicePipelineService:
             model=self.model,
             api_key=self.api_key,
             base_url=self.base_url,
-            temperature=0
+            temperature=0,
+            # DeepSeek rejects tool_choice in thinking mode. Invoice extraction
+            # uses function-call structured output, so use its non-thinking mode.
+            extra_body={"thinking": {"type": "disabled"}} if "deepseek.com" in self.base_url.lower() else None,
         )
 
         # Compile the graph

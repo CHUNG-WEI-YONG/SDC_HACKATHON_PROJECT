@@ -1,5 +1,5 @@
 
-import "dotenv/config";
+import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 import { spawn } from "node:child_process";
@@ -7,6 +7,13 @@ import { randomUUID, scryptSync, timingSafeEqual, createHmac } from "node:crypto
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { processMessage } from "./services/aiService.js";
+
+const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(serverDirectory, "..", "..");
+dotenv.config({ path: path.join(serverDirectory, ".env"), override: false });
+// Shared model credentials live with the Python agent; load them as fallback
+// so the Node chatbot uses the same API and model configuration.
+dotenv.config({ path: path.join(projectRoot, "src", ".env"), override: false });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,8 +29,6 @@ app.use(cors({
 
 app.use(express.json({ limit: "15mb" }));
 
-const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(serverDirectory, "..", "..");
 const bridge = spawn(process.env.PYTHON_EXECUTABLE || "python", [
   path.join(projectRoot, "src", "liggy_bridge.py"),
 ], {
@@ -262,13 +267,27 @@ app.post("/api/invoices/:decision", async (req, res) => {
       invoice_data: req.body?.invoiceData,
     });
     if (decision === "approve" || decision === "reject") invoiceReviewOwners.delete(threadId);
-    if (decision === "approve" && result.file_name) {
-      const fileUrl = `/api/invoices/files/${encodeURIComponent(result.file_name)}`;
-      return res.json({
-        ...result,
-        preview_url: fileUrl,
-        download_url: `${fileUrl}?download=1`,
-      });
+    if (decision === "approve") {
+      let fileName = path.basename(result.file_name || "");
+      // Older agent responses may omit file_name even though the invoice was
+      // persisted. Resolve it from this user's saved history as a fallback.
+      if (!fileName && result.invoice_no) {
+        try {
+          const data = await callInvoiceAgent({ action: "business_data", user_id: req.user.id });
+          const savedInvoice = (data.invoices || []).find((invoice) => invoice.invoice_no === result.invoice_no);
+          fileName = path.basename(savedInvoice?.file_path || "");
+        } catch (error) {
+          console.warn("Could not resolve approved invoice PDF from history:", error.message);
+        }
+      }
+      if (fileName && fileName.toLowerCase().endsWith(".pdf")) {
+        const fileUrl = `/api/invoices/files/${encodeURIComponent(fileName)}`;
+        return res.json({
+          ...result,
+          preview_url: fileUrl,
+          download_url: `${fileUrl}?download=1`,
+        });
+      }
     }
     res.json(result);
   } catch (error) {

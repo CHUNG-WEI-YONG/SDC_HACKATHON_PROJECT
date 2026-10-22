@@ -1,17 +1,8 @@
-import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from .schema import EInvoiceData, AgentState
 from .database import get_customer_info, log_invoice_to_db
 from .pdf_generators import generate_invoice_pdf
-from dotenv import load_dotenv
-
-load_dotenv()
-API_KEY=os.getenv("OPENAI_API_KEY")
-URL=os.getenv("OPENAI_URL")
-MODEL=os.getenv("OPENAI_MODEL")
-
-
 def create_extraction_node(llm):
 
     structured_llm = llm.with_structured_output(EInvoiceData, method="function_calling")

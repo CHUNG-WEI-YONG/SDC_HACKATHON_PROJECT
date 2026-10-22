@@ -6,7 +6,7 @@ Liggy is a small business e-invoice app. Its React client connects to an Express
 
 - Node.js 20 or newer with npm
 - Python 3.10 or newer
-- An OpenAI API key, or an API key for an OpenAI-compatible service supported by `langchain-openai`
+- A DeepSeek API key (or another OpenAI-compatible API and model supported by both SDKs)
 
 ## Setup
 
@@ -28,21 +28,25 @@ npm install
 cd ..\..
 ```
 
-Create `liggy/server/.env` by copying `liggy/server/.env.example`, then add your AI key and model settings:
+Create `src/.env` by copying `src/.env.example`. Configure the Python invoice agent with these names:
 
 ```dotenv
-PORT=3001
-CLIENT_ORIGIN=http://localhost:5173
-PYTHON_EXECUTABLE=C:/path/to/sdc/.venv/Scripts/python.exe
-SESSION_SECRET=replace-this-with-a-long-random-secret
-
-OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-4o-mini
-# Optional for an OpenAI-compatible service:
-# OPENAI_BASE_URL=https://api.example.com/v1
+APIKEY=your_api_key_here
+AI_URL=https://api.deepseek.com
+BASEMODEL=deepseek-flash
 ```
 
-The invoice agent and Liggy Help use these AI settings. If your provider uses a different model, set `OPENAI_MODEL` to a model available to your account. Keep `.env` private and do not commit API keys. The `.env.example` file documents optional SMTP settings for emailing saved invoices.
+Liggy AI's chatbot still reads the compatible `OPENAI_*` names from this same file. Keep them set to the same values as the agent aliases:
+
+```dotenv
+OPENAI_API_KEY=your_api_key_here
+OPENAI_BASE_URL=https://api.deepseek.com
+OPENAI_MODEL=deepseek-flash
+```
+
+The invoice agent uses DeepSeek's OpenAI-compatible Chat Completions API at `https://api.deepseek.com` and the `deepseek-flash` model. Its structured invoice extraction uses function-call output, so the Python agent explicitly disables DeepSeek thinking mode for those calls. The chatbot uses the same API/model but does not use function calling. DeepSeek's current model guide lists `deepseek-flash` and `deepseek-v4-pro`; the legacy `deepseek-chat` model was discontinued in July 2026. See [DeepSeek's API quick start](https://api-docs.deepseek.com/guides/search_fetch), [tool-call guide](https://api-docs.deepseek.com/guides/tool_calls/), and [model list and pricing](https://api-docs.deepseek.com/quick_start/pricing/).
+
+Also create `liggy/server/.env` from `liggy/server/.env.example` for app/session/email settings. Set `PYTHON_EXECUTABLE` to the full path of your project's virtual-environment Python (for example `C:/path/to/sdc/.venv/Scripts/python.exe`) and set a long random `SESSION_SECRET`. SMTP values are optional and only needed to send invoice emails. `.env` files are ignored by Git; never commit API keys.
 
 For production, configure a unique, long, random `SESSION_SECRET` and serve the app over HTTPS. The development secret fallback is only for local use.
 
@@ -64,7 +68,7 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173). Create an account or sign in. The Vite development server forwards `/api` requests to the backend on port 3001. The Python agent is launched by the backend; you do not need to start it separately.
 
-Set `PYTHON_EXECUTABLE` in `.env` to the full path of the virtual environment's Python executable, replacing `C:/path/to/sdc` with the actual path to this project. This makes the backend use the same Python environment where you installed the agent dependencies.
+If PowerShell blocks activation of the virtual environment, set `PYTHON_EXECUTABLE` in `liggy/server/.env` to the full path of the virtual environment's Python executable.
 
 ## How invoices and reports work
 
@@ -86,7 +90,7 @@ For a shared deployment, back up `sme_records.db` and `generated_invoices/` toge
 
 ## Troubleshooting
 
-- **AI key/model error:** Check `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL` in `liggy/server/.env`, then restart the backend.
+- **Invoice agent key/model error:** Check `APIKEY`, `AI_URL`, and `BASEMODEL` in `src/.env`. **Chatbot configuration error:** Check its matching `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` values. Restart the backend after changing either set.
 - **Cannot connect to the agent:** Confirm Python dependencies installed successfully and `PYTHON_EXECUTABLE` points to the intended Python interpreter.
 - **Email could not send:** Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`; restart the backend.
 - **Wrong or missing account data:** Confirm you are signed into the intended email account. Business records are separated by account.
