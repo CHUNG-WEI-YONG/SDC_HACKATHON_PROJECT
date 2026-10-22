@@ -141,7 +141,7 @@ Leave this terminal open. The backend starts the Python invoice agent automatica
 
 ```powershell
 cd liggy\client
-npm start
+npm run dev
 ```
 
 Leave this terminal open too. Open **http://localhost:5173** in your browser. Create an account or sign in.
@@ -162,8 +162,11 @@ Each account has separate records. Firestore stores account, customer, and invoi
 ## If something does not start
 
 - **AI settings error:** check all six provider settings in `src/.env`, then stop and restart the backend terminal.
+- **`ERR_MODULE_NOT_FOUND` for `firebase-admin` or another server package:** from the project root, run `cd liggy\server` then `npm install`; wait for it to finish successfully before running `npm start`.
+- **Website `npm start` is missing:** in `liggy\client`, use `npm run dev` (the client package defines the Vite `dev` script).
 - **Function/tool-call or JSON response error:** choose a model/provider that supports the features listed in Step 4.
 - **Firestore credential error:** check `GOOGLE_CLOUD_PROJECT`, the service-account path, and that the service account has access to Firestore.
+- **`EPERM` during `npm install` / `npm ci`, or `firebase-admin` is still missing after an interrupted install:** close terminals running Node, open PowerShell in `liggy\server`, remove the incomplete dependency folder with `Remove-Item -Recurse -Force .\node_modules`, then run `npm ci` and wait for it to finish successfully. The server package uses the Node.js version already installed on your computer; it does not need to download a second Node.js executable.
 - **Python agent unavailable:** check that `PYTHON_EXECUTABLE` points to `.venv/Scripts/python.exe` and that the Step 2 install completed.
 - **Email error:** check the SMTP settings. Invoices can still be saved without email configured.
 - **Changed `.env` values:** restart the backend after editing settings.
