@@ -13,6 +13,8 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [page, setPage] = useState("Overview");
+  const [selectedDailyDate, setSelectedDailyDate] = useState(getLocalToday);
+  const [selectedMonth, setSelectedMonth] = useState(() => getLocalToday().slice(0, 7));
   const [sales, setSales] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [invoiceHistory, setInvoiceHistory] = useState([]);
@@ -36,6 +38,8 @@ function App() {
   const [historyPreview, setHistoryPreview] = useState(null);
   const [emailPrompt, setEmailPrompt] = useState(null);
   const [emailOutcome, setEmailOutcome] = useState("");
+  const [historyEmailOutcome, setHistoryEmailOutcome] = useState("");
+  const [sendingHistoryInvoice, setSendingHistoryInvoice] = useState("");
   const [invoiceFile, setInvoiceFile] = useState(null);
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -84,8 +88,12 @@ function App() {
 
   useEffect(() => {
     if (!user || !["Daily Sales Report", "Monthly Insights"].includes(page)) return;
-    setReport(buildSalesReport(invoiceHistory, page === "Daily Sales Report" ? "daily" : "monthly"));
-  }, [page, invoiceHistory, user]);
+    setReport(buildSalesReport(
+      invoiceHistory,
+      page === "Daily Sales Report" ? "daily" : "monthly",
+      page === "Daily Sales Report" ? selectedDailyDate : selectedMonth,
+    ));
+  }, [page, invoiceHistory, user, selectedDailyDate, selectedMonth]);
 
   async function submitAuth(event) {
     event.preventDefault();
@@ -202,8 +210,25 @@ function App() {
     setInvoice((previous) => ({
       ...previous,
       buyer: name,
-      ...(match ? { buyerEmail: match.email || "", buyerId: match.tin_number || "" } : {}),
+      ...(previous.buyer.trim().toLowerCase() !== name.trim().toLowerCase() ? { buyerEmail: "" } : {}),
+      ...(match ? { buyerId: match.tin_number || "" } : {}),
     }));
+  }
+
+  async function sendHistoricalInvoiceEmail(record) {
+    setHistoryEmailOutcome("");
+    setSendingHistoryInvoice(record.invoice_no);
+    try {
+      const response = await fetch(`/api/invoices/${encodeURIComponent(record.invoice_no)}/send`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to send this invoice.");
+      setHistoryEmailOutcome(`${record.invoice_no}: ${data.message || "Invoice email sent."}`);
+      await refreshBusinessData().catch(() => {});
+    } catch (err) {
+      setHistoryEmailOutcome(`${record.invoice_no}: ${err.message}`);
+    } finally {
+      setSendingHistoryInvoice("");
+    }
   }
 
   async function analyzeInvoice(event) {
@@ -378,7 +403,7 @@ function App() {
 
     try {
       const data = await refreshBusinessData();
-      setReport(buildSalesReport(data.invoices || [], type));
+      setReport(buildSalesReport(data.invoices || [], type, type === "daily" ? selectedDailyDate : selectedMonth));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -424,8 +449,9 @@ function App() {
   const now = new Date();
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const monthKey = todayKey.slice(0, 7);
-  const todayInvoices = invoiceHistory.filter((record) => (record.invoice_date || record.created_at || "").slice(0, 10) === todayKey);
   const monthInvoices = invoiceHistory.filter((record) => (record.invoice_date || record.created_at || "").startsWith(monthKey));
+  const selectedDayInvoices = invoiceHistory.filter((record) => (record.invoice_date || record.created_at || "").slice(0, 10) === selectedDailyDate);
+  const selectedMonthInvoices = invoiceHistory.filter((record) => (record.invoice_date || record.created_at || "").slice(0, 7) === selectedMonth);
 
   if (!authReady) return <div className="auth-screen"><div className="auth-card">Loading Liggy…</div></div>;
   if (!user) return (
@@ -738,12 +764,17 @@ function App() {
 
                     <Field label="Buyer Tax ID (if applicable)">
                       <input
+                        type="text"
+                        autoCapitalize="characters"
+                        maxLength={14}
+                        pattern="(?:IG[0-9]{9,12}|(?:C|CS|D|F|FA|PT|TA|TC|TN|TR|TP|J|LE)[0-9]{8,11}0|EI00000000(?:10|20|30|40))"
                         value={invoice.buyerId}
                         onChange={(e) =>
-                          setInvoice({ ...invoice, buyerId: e.target.value })
+                          setInvoice({ ...invoice, buyerId: e.target.value.toUpperCase().replace(/\s+/g, "") })
                         }
-                        placeholder="Customer tax identification number"
+                        placeholder="e.g. C2584563200 or IG123456789"
                       />
+                      <small className="small-note">Use the IRBM TIN shown in MyTax. Malaysian individual TINs use IG; business TINs use their registered prefix.</small>
                     </Field>
 
                     <Field label="Buyer Email (optional)">
@@ -788,7 +819,10 @@ function App() {
                             <input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(e) => setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, quantity: e.target.value } : entry))} required />
                           </Field>
                           <Field label={`Unit Price (${invoice.currency}) *`}>
-                            <input type="number" min="0" step="0.01" value={item.unit_price} onChange={(e) => setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, unit_price: e.target.value } : entry))} required />
+                            <input type="text" inputMode="decimal" pattern="[0-9]+([.][0-9]{1,2})?|[.][0-9]{1,2}" value={item.unit_price} onChange={(e) => {
+                              const value = e.target.value;
+                              if (/^\d*(?:\.\d{0,2})?$/.test(value)) setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, unit_price: value } : entry));
+                            }} required />
                           </Field>
                           {invoiceItems.length > 1 && <button type="button" className="text-button" onClick={() => setInvoiceItems(invoiceItems.filter((_, i) => i !== index))}>Remove</button>}
                         </div>
@@ -927,7 +961,7 @@ function App() {
                           <td>{record.invoice_date || (record.created_at || "").slice(0, 10) || "—"}</td>
                           <td>{record.invoice_data?.currency || "MYR"} {Number(record.total_amount || 0).toFixed(2)}</td>
                           <td>{record.source === "typed" ? "Typed + AI checks" : record.source === "document" ? "Document + AI extraction" : "Imported history"}</td>
-                          <td>{record.email_sent ? "Sent" : "Not sent"}</td>
+                          <td>{record.email_sent ? "Sent" : "Not sent"}<br /><small>{record.invoice_data?.customer_email || "No invoice email"}</small><br /><button type="button" onClick={() => sendHistoricalInvoiceEmail(record)} disabled={sendingHistoryInvoice === record.invoice_no || !record.invoice_data?.customer_email}>{sendingHistoryInvoice === record.invoice_no ? "Sending…" : "Send invoice"}</button></td>
                           <td className="history-pdf-links">
                             {record.preview_url && <button type="button" onClick={() => setHistoryPreview(record)}>Preview</button>}
                             {record.download_url && <button type="button" onClick={() => savePdfToLocation(record.download_url, record.invoice_no)}>Save PDF</button>}
@@ -937,6 +971,7 @@ function App() {
                     </table>
                   </div>
                 )}
+                {historyEmailOutcome && <p className="small-note" role="status">{historyEmailOutcome}</p>}
               </section>
             </>
           )}
@@ -979,7 +1014,7 @@ function App() {
               <PageHeading
                 eyebrow="SALES ANALYTICS"
                 title="Daily Sales Report"
-                description={`Live summary of approved invoices saved for ${todayKey}. It updates when your invoice records change.`}
+                description={`Live summary of approved invoices saved for ${selectedDailyDate}. It updates when your invoice records change.`}
                 action={
                   <button
                     className="primary-button"
@@ -991,29 +1026,34 @@ function App() {
                 }
               />
 
+              <section className="panel report-period-picker">
+                <label htmlFor="daily-report-date">Report date</label>
+                <input id="daily-report-date" type="date" value={selectedDailyDate} max={todayKey} onChange={(event) => { if (event.target.value) setSelectedDailyDate(event.target.value); }} />
+              </section>
+
               <section className="stats-grid report-stats">
                 <StatCard
-                  label="Invoiced Today"
-                  value={formatCurrencyTotals(todayInvoices) || "MYR 0.00"}
+                  label="Invoiced on Selected Date"
+                  value={formatCurrencyTotals(selectedDayInvoices) || "MYR 0.00"}
                   note="From approved invoices"
                   icon="↗"
                 />
                 <StatCard
-                  label="Invoices Today"
-                  value={String(todayInvoices.length)}
+                  label="Invoices on Selected Date"
+                  value={String(selectedDayInvoices.length)}
                   note="Saved e-invoices"
                   icon="✓"
                 />
                 <StatCard
-                  label="Customers Today"
-                  value={String(new Set(todayInvoices.map((record) => record.customer_name)).size)}
+                  label="Customers on Selected Date"
+                  value={String(new Set(selectedDayInvoices.map((record) => record.customer_name)).size)}
                   note="Unique customers invoiced"
                   icon="▤"
                 />
                 <StatCard
                   label="Average Invoice"
-                  value={formatCurrencyTotals(todayInvoices, true) || "MYR 0.00"}
-                  note="Today's average by currency"
+                  value={formatCurrencyTotals(selectedDayInvoices, true) || "MYR 0.00"}
+                  note="Selected date average by currency"
                   icon="◷"
                 />
               </section>
@@ -1027,10 +1067,10 @@ function App() {
                     </p>
                   </div>
                   <span className="status-badge paid">
-                    {todayInvoices.length} records
+                    {selectedDayInvoices.length} records
                   </span>
                 </div>
-                <TransactionTable sales={todayInvoices.map((record) => ({ id: record.invoice_no, item: record.invoice_no, customer: record.customer_name, amount: record.total_amount, currency: record.invoice_data?.currency || "MYR", status: record.status || "Approved" })).reverse()} />
+                <TransactionTable sales={selectedDayInvoices.map((record) => ({ id: record.invoice_no, item: record.invoice_no, customer: record.customer_name, amount: record.total_amount, currency: record.invoice_data?.currency || "MYR", status: record.status || "Approved" })).reverse()} />
               </section>
 
               {report && (
@@ -1047,7 +1087,7 @@ function App() {
               <PageHeading
                 eyebrow="BUSINESS INTELLIGENCE"
                 title="Monthly Insights"
-                description={`Live summary of approved invoice activity and customer spend for ${monthKey}. It updates when your invoice records change.`}
+                description={`Live summary of approved invoice activity and customer spend for ${selectedMonth}. It updates when your invoice records change.`}
                 action={
                   <button
                     className="primary-button"
@@ -1059,29 +1099,34 @@ function App() {
                 }
               />
 
+              <section className="panel report-period-picker">
+                <label htmlFor="monthly-report-month">Report month</label>
+                <input id="monthly-report-month" type="month" value={selectedMonth} max={monthKey} onChange={(event) => { if (event.target.value) setSelectedMonth(event.target.value); }} />
+              </section>
+
               <section className="stats-grid">
                 <StatCard
-                  label="Invoiced This Month"
-                  value={formatCurrencyTotals(monthInvoices) || "MYR 0.00"}
+                  label="Invoiced for Selected Month"
+                  value={formatCurrencyTotals(selectedMonthInvoices) || "MYR 0.00"}
                   note="From saved e-invoices"
                   icon="↗"
                 />
                 <StatCard
-                  label="Invoices This Month"
-                  value={String(monthInvoices.length)}
+                  label="Invoices in Selected Month"
+                  value={String(selectedMonthInvoices.length)}
                   note="Saved invoice records"
                   icon="✓"
                 />
                 <StatCard
                   label="Average Invoice"
-                  value={formatCurrencyTotals(monthInvoices, true) || "MYR 0.00"}
-                  note="Monthly average by currency"
+                  value={formatCurrencyTotals(selectedMonthInvoices, true) || "MYR 0.00"}
+                  note="Selected month average by currency"
                   icon="◷"
                 />
                 <StatCard
                   label="Customers Invoiced"
-                  value={String(new Set(monthInvoices.map((record) => record.customer_name)).size)}
-                  note="Unique customers this month"
+                  value={String(new Set(selectedMonthInvoices.map((record) => record.customer_name)).size)}
+                  note="Unique customers in selected month"
                   icon="▤"
                 />
               </section>
@@ -1093,7 +1138,7 @@ function App() {
                     Revenue distribution across your recorded transactions.
                   </p>
 
-                  {monthInvoices.map((record) => (
+                  {selectedMonthInvoices.map((record) => (
                     <div className="bar-row" key={record.invoice_no}>
                       <div className="bar-label">
                         <span>{record.customer_name} · {record.invoice_no}</span>
@@ -1104,8 +1149,8 @@ function App() {
                           className="bar-fill"
                           style={{
                             width: `${
-                              amountForCurrency(monthInvoices, record.invoice_data?.currency || "MYR")
-                                ? (record.total_amount / amountForCurrency(monthInvoices, record.invoice_data?.currency || "MYR")) * 100
+                              amountForCurrency(selectedMonthInvoices, record.invoice_data?.currency || "MYR")
+                                ? (record.total_amount / amountForCurrency(selectedMonthInvoices, record.invoice_data?.currency || "MYR")) * 100
                                 : 0
                             }%`,
                           }}
@@ -1118,7 +1163,7 @@ function App() {
                 <div className="panel">
                   <h2>Business Insights</h2>
                   <p className="muted">
-                    Initial observations from the current data.
+                    Initial observations from the selected month.
                   </p>
 
                   <div className="insight-item">
@@ -1126,9 +1171,9 @@ function App() {
                     <div>
                       <strong>Highest-value transaction</strong>
                       <p>
-                        {monthInvoices.length
-                          ? `${[...monthInvoices]
-                              .sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0].customer_name} — ${formatCurrencyTotals([ [...monthInvoices].sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0] ])}`
+                        {selectedMonthInvoices.length
+                          ? `${[...selectedMonthInvoices]
+                              .sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0].customer_name} — ${formatCurrencyTotals([ [...selectedMonthInvoices].sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0] ])}`
                           : "No transactions yet"}
                       </p>
                     </div>
@@ -1139,8 +1184,8 @@ function App() {
                     <div>
                       <strong>AI-supported invoices</strong>
                       <p>
-                        {monthInvoices.length
-                          ? `${monthInvoices.filter((record) => ["typed", "document"].includes(record.source)).length} of ${monthInvoices.length} invoices passed through Liggy's agent workflow.`
+                        {selectedMonthInvoices.length
+                          ? `${selectedMonthInvoices.filter((record) => ["typed", "document"].includes(record.source)).length} of ${selectedMonthInvoices.length} invoices passed through Liggy's agent workflow.`
                           : "Approved invoices will appear here automatically."}
                       </p>
                     </div>
@@ -1151,7 +1196,7 @@ function App() {
                     <div>
                       <strong>Customer follow-up</strong>
                       <p>
-                        {monthInvoices.some((record) => !record.email_sent && !record.invoice_data?.customer_email)
+                        {selectedMonthInvoices.some((record) => !record.email_sent && !record.invoice_data?.customer_email)
                           ? "Some customers do not have an email address saved. Add one in Customer Records for future invoice delivery."
                           : "Customer email details are available for invoice follow-up."}
                       </p>
@@ -1315,16 +1360,20 @@ function LiveReportSummary({ report }) {
   );
 }
 
-function buildSalesReport(invoices, type) {
+function getLocalToday() {
   const now = new Date();
-  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const month = day.slice(0, 7);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function buildSalesReport(invoices, type, selectedPeriod) {
+  const today = getLocalToday();
+  const period = selectedPeriod || (type === "daily" ? today : today.slice(0, 7));
   const records = invoices.filter((record) => {
     const recordDate = (record.invoice_date || record.created_at || "").slice(0, 10);
-    return type === "daily" ? recordDate === day : recordDate.startsWith(month);
+    return type === "daily" ? recordDate === period : recordDate.startsWith(period);
   });
   return {
-    period: type === "daily" ? day : month,
+    period,
     invoice_count: records.length,
     customer_count: new Set(records.map((record) => record.customer_name)).size,
     total_invoiced: currencyTotals(records),

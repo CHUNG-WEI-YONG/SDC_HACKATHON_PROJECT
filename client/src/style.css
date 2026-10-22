@@ -921,6 +921,28 @@ tbody tr:last-child td {
   margin-bottom: 22px;
 }
 
+.report-period-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.report-period-picker label {
+  color: #26372d;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.report-period-picker input {
+  max-width: 220px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #26372d;
+  background: #fff;
+}
+
 .bar-row {
   margin-top: 23px;
 }

@@ -22,7 +22,6 @@ from src.database import (  # noqa: E402
     get_customers,
     get_invoice_by_number,
     get_invoice_history,
-    get_customer_info,
     init_db,
     mark_invoice_email_sent,
     create_user,
@@ -112,7 +111,6 @@ def handle(request):
             raise ValueError("The saved invoice could not be found.")
         recipient = (
             (invoice.get("invoice_data") or {}).get("customer_email")
-            or (get_customer_info(invoice.get("customer_name") or "", user_id) or {}).get("email")
             or ""
         ).strip()
         if not recipient:
