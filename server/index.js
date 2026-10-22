@@ -149,8 +149,13 @@ app.post("/api/auth/register", async (req, res) => {
     setSession(res, user);
     res.status(201).json({ user });
   } catch (error) {
-    const duplicate = /unique|constraint/i.test(error.message);
-    res.status(duplicate ? 409 : 500).json({ error: duplicate ? "An account with this email already exists." : "Unable to create account." });
+    const duplicate = /already exists|already registered|duplicate|unique|constraint/i.test(error.message);
+    if (!duplicate) console.error("Account registration failed:", error);
+    res.status(duplicate ? 409 : 503).json({
+      error: duplicate
+        ? "An account with this email already exists. Sign in instead, or use a different email address."
+        : "Account creation is temporarily unavailable. Check the backend logs and Firebase/Firestore connection.",
+    });
   }
 });
 
