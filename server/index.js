@@ -18,10 +18,15 @@ const { db } = await import("./firebaseAdmin.js");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const productionClientDirectory = path.join(projectRoot, "client", "dist");
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   throw new Error("Set SESSION_SECRET to a long random value before running Liggy in production.");
 }
 const SESSION_SECRET = process.env.SESSION_SECRET || "liggy-local-dev-secret-change-before-deploy";
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(productionClientDirectory, { index: false }));
+}
 
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
@@ -40,6 +45,13 @@ const bridge = spawn(process.env.PYTHON_EXECUTABLE || "python", [
 const pendingBridgeCalls = new Map();
 const invoiceReviewOwners = new Map();
 let bridgeOutput = "";
+let bridgeState = "starting";
+
+function markBridgeFailed(error) {
+  bridgeState = "failed";
+  for (const pending of pendingBridgeCalls.values()) pending.reject(error);
+  pendingBridgeCalls.clear();
+}
 
 bridge.stdout.setEncoding("utf8");
 bridge.stdout.on("data", (chunk) => {
@@ -50,6 +62,10 @@ bridge.stdout.on("data", (chunk) => {
     if (!line.trim()) continue;
     try {
       const message = JSON.parse(line);
+      if (message.type === "ready") {
+        if (bridgeState === "starting") bridgeState = "ready";
+        continue;
+      }
       const pending = pendingBridgeCalls.get(message.id);
       if (!pending) continue;
       pendingBridgeCalls.delete(message.id);
@@ -62,19 +78,24 @@ bridge.stdout.on("data", (chunk) => {
 });
 
 bridge.on("error", (error) => {
-  for (const pending of pendingBridgeCalls.values()) pending.reject(error);
-  pendingBridgeCalls.clear();
+  markBridgeFailed(error);
   console.error("Could not start the invoice agent. Check Python and the root requirements.txt.", error.message);
 });
 
-bridge.on("exit", (code) => {
-  const error = new Error(`Invoice agent process stopped${code === null ? "" : ` (code ${code})`}.`);
-  for (const pending of pendingBridgeCalls.values()) pending.reject(error);
-  pendingBridgeCalls.clear();
+bridge.on("exit", (code, signal) => {
+  const reason = code === null ? `signal ${signal || "unknown"}` : `code ${code}`;
+  const error = new Error(`Invoice agent process stopped (${reason}).`);
+  markBridgeFailed(error);
+  console.error(error.message);
 });
 
+// A broken pipe must not become an uncaught error that stops the website.
+bridge.stdin.on("error", markBridgeFailed);
+bridge.stdout.on("error", markBridgeFailed);
+bridge.stdout.on("end", () => markBridgeFailed(new Error("Invoice agent output closed.")));
+
 function callInvoiceAgent(payload) {
-  if (!bridge.stdin.writable) {
+  if (bridgeState !== "ready" || !bridge.stdin.writable) {
     throw new Error("Invoice agent is unavailable. Restart the backend and check Python dependencies.");
   }
   const id = randomUUID();
@@ -82,18 +103,20 @@ function callInvoiceAgent(payload) {
     pendingBridgeCalls.set(id, { resolve, reject });
     bridge.stdin.write(`${JSON.stringify({ ...payload, id })}\n`, (error) => {
       if (error) {
-        pendingBridgeCalls.delete(id);
-        reject(error);
+        markBridgeFailed(error);
       }
     });
   });
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
+  const ready = bridgeState === "ready";
+  res.set("Cache-Control", "no-store");
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
     app: "Liggy",
-    message: "Backend is running!"
+    invoiceAgent: bridgeState,
+    message: ready ? "Backend is ready!" : "Invoice service is temporarily unavailable."
   });
 });
 
@@ -160,8 +183,10 @@ app.post("/api/auth/register", async (req, res) => {
     setSession(res, user);
     res.status(201).json({ user });
   } catch (error) {
-    const duplicate = /already exists|already registered|duplicate|unique|constraint/i.test(error.message);
-    if (!duplicate) console.error("Account registration failed:", error);
+    const duplicate = /unique|constraint|already exists|duplicate/i.test(error.message || "");
+    if (!duplicate) {
+      console.error("Account registration failed:", error.name || "Error", error.code || "unknown");
+    }   
     res.status(duplicate ? 409 : 503).json({
       error: duplicate
         ? "An account with this email already exists. Sign in instead, or use a different email address."
@@ -192,9 +217,10 @@ app.post("/api/auth/logout", (_req, res) => {
 
 app.get("/api/auth/me", async (req, res) => {
   const session = readSession(req);
-  if (!session) return res.status(401).json({ error: "Not signed in." });
+  if (!session) return res.json({ user: null });
   try {
     const user = await callInvoiceAgent({ action: "get_user", user_id: session.id });
+
     if (!user) return res.status(401).json({ error: "Account not found." });
     res.json({ user });
   } catch (error) {
@@ -433,6 +459,15 @@ app.get("/api/firebase-test", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Liggy backend running at http://localhost:${PORT}`);
+if (process.env.NODE_ENV === "production") {
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(productionClientDirectory, "index.html"), (error) => {
+      if (error && !res.headersSent) next(error);
+    });
+  });
+}
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Liggy ${process.env.NODE_ENV === "production" ? "website and API" : "backend"} running on port ${PORT}`);
 });

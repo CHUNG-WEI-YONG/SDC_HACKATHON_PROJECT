@@ -4,6 +4,12 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+MODE="${1:-development}"
+if [[ "$MODE" != "development" && "$MODE" != "production" ]]; then
+  echo "Usage: $0 [development|production]" >&2
+  exit 2
+fi
+
 echo "Preparing Liggy for Replit..."
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -16,7 +22,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d server/node_modules ]]; then
+if [[ ! -d server/node_modules/@google-cloud/firestore ]]; then
   echo "Installing backend packages..."
   npm ci --prefix server
 fi
@@ -26,27 +32,53 @@ if [[ ! -d client/node_modules ]]; then
   npm ci --prefix client
 fi
 
-if [[ ! -x .venv/bin/python ]]; then
-  echo "Creating Python environment..."
-  python3 -m venv .venv
+export PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-$(command -v python3)}"
+# Use the system trust store, including the environment's trusted CA certificates.
+# Python HTTP clients otherwise use certifi's separate bundle.
+if [[ -z "${SSL_CERT_FILE:-}" && -f /etc/ssl/certs/ca-certificates.crt ]]; then
+  export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 fi
 
-echo "Installing invoice-agent requirements..."
-.venv/bin/python -m pip install --disable-pip-version-check -r requirements.txt
+if [[ "$MODE" == "production" ]]; then
+  if [[ ! -f client/dist/index.html ]]; then
+    echo "Production client build is missing. Run bash ./replit-build.sh before starting production." >&2
+    exit 1
+  fi
 
-# Liggy's Vite config proxies browser /api requests to this local backend port.
+  export NODE_ENV=production
+  export PORT="${PORT:-5000}"
+  echo "Starting Liggy website and API in production mode on port ${PORT}..."
+  exec node server/index.js
+fi
+
+# The Vite development server proxies /api requests to this local backend port.
 export PORT=3001
-export PYTHON_EXECUTABLE="$ROOT_DIR/.venv/bin/python"
 export CLIENT_ORIGIN="${CLIENT_ORIGIN:-http://localhost:5000}"
 
-npm start --prefix server &
+node server/index.js &
 SERVER_PID=$!
+./client/node_modules/.bin/vite ./client --host 0.0.0.0 --port 5000 --strictPort &
+CLIENT_PID=$!
 
 cleanup() {
-  kill "$SERVER_PID" 2>/dev/null || true
+  trap - EXIT INT TERM
+  kill "$SERVER_PID" "$CLIENT_PID" 2>/dev/null || true
   wait "$SERVER_PID" 2>/dev/null || true
+  wait "$CLIENT_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
-echo "Starting Liggy API on internal port 3001 and website on port 5000..."
-npm run dev --prefix client -- --host 0.0.0.0 --port 5000 --strictPort
+echo "Starting Liggy development API on port 3001 and Vite on port 5000..."
+
+# Neither service is optional in development: stop the other and preserve the
+# first child's exit status if either one exits unexpectedly.
+set +e
+wait -n "$SERVER_PID" "$CLIENT_PID"
+STATUS=$?
+set -e
+if kill -0 "$SERVER_PID" 2>/dev/null; then
+  echo "Vite development server stopped unexpectedly." >&2
+else
+  echo "Liggy API server stopped unexpectedly." >&2
+fi
+exit "$STATUS"

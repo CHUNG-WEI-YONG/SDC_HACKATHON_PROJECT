@@ -6,29 +6,31 @@ configuration as the Express Firebase Admin SDK.
 
 import json
 import os
+
 import sys
+
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 import firebase_admin
-from firebase_admin import firestore
+from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 
 def _db():
     """Return the shared Firestore client, initializing Firebase once per process."""
     if not firebase_admin._apps:
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-        print(
-            "[Firebase/Python] STEP 1/3: initializing credentials "
-            f"(project={project_id or 'from credentials'}, "
-            f"service-account={'configured' if os.getenv('GOOGLE_APPLICATION_CREDENTIALS') else 'Application Default Credentials'}).",
-            file=sys.stderr,
-            flush=True,
-        )
-        options = {"projectId": project_id} if project_id else None
-        firebase_admin.initialize_app(options=options)
-        print("[Firebase/Python] STEP 2/3: Firebase Admin initialized.", file=sys.stderr, flush=True)
+project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+print(
+    "[Firebase/Python] STEP 1/3: initializing credentials "
+    f"(project={project_id or 'from credentials'}, "
+    f"service-account={'configured' if os.getenv('GOOGLE_APPLICATION_CREDENTIALS') else 'Application Default Credentials'}).",
+    file=sys.stderr,
+    flush=True,
+)
+options = {"projectId": project_id} if project_id else None
+firebase_admin.initialize_app(options=options)
+print("[Firebase/Python] STEP 2/3: Firebase Admin initialized.", file=sys.stderr, flush=True)
     return firestore.client()
 
 
