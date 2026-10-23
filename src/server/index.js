@@ -8,7 +8,7 @@ import { randomUUID, scryptSync, timingSafeEqual, createHmac } from "node:crypto
 import { processMessage } from "./services/aiService.js";
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(serverDirectory, "..");
+const projectRoot = path.resolve(serverDirectory, "..", "..");
 dotenv.config({ path: path.join(projectRoot, ".env"), override: false });
 dotenv.config({ path: path.join(serverDirectory, ".env"), override: false });
 dotenv.config({ path: path.join(projectRoot, "src", ".env"), override: false });
@@ -18,7 +18,7 @@ const { db } = await import("./firebaseAdmin.js");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const productionClientDirectory = path.join(projectRoot, "client", "dist");
+const productionClientDirectory = path.join(projectRoot, "src", "client", "dist");
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   throw new Error("Set SESSION_SECRET to a long random value before running Liggy in production.");
 }

@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 import vm from "node:vm";
 
 // Exercise the actual server bridge wiring without credentials or external calls.
-const source = readFileSync(new URL("../server/index.js", import.meta.url), "utf8");
+const source = readFileSync(new URL("../src/server/index.js", import.meta.url), "utf8");
 const wiring = source.slice(source.indexOf("const bridge = spawn("), source.indexOf("function signSession"));
 
 function setup() {

@@ -80,7 +80,8 @@ test("production build, routing, and required-process failures", { timeout: 2400
     try { for (const proc of running.reverse()) await stop(proc); }
     finally { await rm(workspace, { recursive: true, force: true }); }
   });
-  for (const name of ["client", "server", "replit-build.sh", "replit-start.sh"]) {
+  await mkdir(path.join(workspace, "src"), { recursive: true });
+  for (const name of ["src/client", "src/server", "replit-build.sh", "replit-start.sh"]) {
     await cp(path.join(root, name), path.join(workspace, name), {
       recursive: true,
       filter: (source) => !["node_modules", "dist", ".env"].includes(path.basename(source))
@@ -99,7 +100,7 @@ process.stdin.on("end", () => process.exit(0));
     const build = launch("bash", ["./replit-build.sh"], workspace);
     running.push(build);
     assert.deepEqual(await finish(build), { code: 0, signal: null }, build.output());
-    assert.match(await readFile(path.join(workspace, "client/dist/index.html"), "utf8"), /\/assets\//);
+    assert.match(await readFile(path.join(workspace, "src/client/dist/index.html"), "utf8"), /\/assets\//);
   });
 
   await t.test("production launcher serves HTML and assets without swallowing API routes", async () => {
@@ -120,13 +121,13 @@ process.stdin.on("end", () => process.exit(0));
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-type"), /text\/html/);
     const html = await page.text();
-    assert.equal(html, await readFile(path.join(workspace, "client/dist/index.html"), "utf8"));
+    assert.equal(html, await readFile(path.join(workspace, "src/client/dist/index.html"), "utf8"));
     const assetPath = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
     assert.ok(assetPath, "built HTML must reference a JavaScript asset");
     const asset = await request(assetPath);
     assert.equal(asset.status, 200);
     assert.match(asset.headers.get("content-type"), /javascript/);
-    assert.equal(await asset.text(), await readFile(path.join(workspace, "client/dist", assetPath), "utf8"));
+    assert.equal(await asset.text(), await readFile(path.join(workspace, "src/client/dist", assetPath), "utf8"));
     const health = await request("/api/health");
     assert.equal(health.status, 200);
     assert.match(health.headers.get("content-type"), /application\/json/);
@@ -154,10 +155,10 @@ process.stdin.on("end", () => process.exit(0));
   await t.test("required development child failure propagates and stops its sibling", async () => {
     // Test the real supervisor without occupying the user's development ports.
     const fixture = path.join(workspace, "supervisor");
-    await mkdir(path.join(fixture, "server/node_modules/@google-cloud/firestore"), { recursive: true });
-    await mkdir(path.join(fixture, "client/node_modules/.bin"), { recursive: true });
+    await mkdir(path.join(fixture, "src/server/node_modules/@google-cloud/firestore"), { recursive: true });
+    await mkdir(path.join(fixture, "src/client/node_modules/.bin"), { recursive: true });
     await cp(path.join(root, "replit-start.sh"), path.join(fixture, "replit-start.sh"));
-    await writeFile(path.join(fixture, "server/index.js"), `
+    await writeFile(path.join(fixture, "src/server/index.js"), `
 const fs = require("node:fs");
 const timer = setInterval(() => {
   if (fs.existsSync("sibling.pid")) {
@@ -167,7 +168,7 @@ const timer = setInterval(() => {
   }
 }, 20);
 `);
-    await writeFile(path.join(fixture, "client/node_modules/.bin/vite"), `#!${process.execPath}
+    await writeFile(path.join(fixture, "src/client/node_modules/.bin/vite"), `#!${process.execPath}
 require("node:fs").writeFileSync("sibling.pid", String(process.pid));
 setInterval(() => {}, 1000);
 `, { mode: 0o755 });

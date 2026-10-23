@@ -29,7 +29,7 @@ These checks use Node.js and its built-in test and `fetch` features. They do not
 Open the project folder in VS Code. In the first terminal, start the backend using the same setup and environment files described in the root README:
 
 ```powershell
-cd server
+cd src\server
 npm start
 ```
 

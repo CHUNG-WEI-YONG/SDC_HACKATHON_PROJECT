@@ -44,7 +44,7 @@ AI configuration, invoice processing is unavailable.
 
 ## Checks
 
-- `npm run build --prefix client`
+- `npm run build --prefix src/client`
 - `GET /api/health` returns 200 once the Python bridge signals readiness, or 503
   while starting or after bridge failure. The website remains available in both
   cases. This is bridge readiness, not a live check of AI or Firestore availability.

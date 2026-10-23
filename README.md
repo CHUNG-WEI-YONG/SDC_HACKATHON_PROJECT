@@ -1,6 +1,6 @@
 # Liggy — Agentic Auto E-Invoice Generator
 
-Liggy is an AI-assisted e-invoice application for small businesses. It helps users extract and review invoice information, create invoice PDFs, and keep customer and sales records. The React website is in `client/`, the Express API is in `server/`, and the Python multi-agent invoice workflow is in `src/`. Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
+Liggy is an AI-assisted e-invoice application for small businesses. It helps users extract and review invoice information, create invoice PDFs, and keep customer and sales records. The React website, Express API, and Python multi-agent invoice workflow are all organized under `src/` (`src/client/`, `src/server/`, and the Python modules at the top level of `src/`). Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
 
 
 ## Team and project
@@ -47,8 +47,8 @@ Liggy combines an invoice workflow with an AI agent that extracts invoice detail
 
 | Layer                     | Technology                                                                           |
 | ------------------------- | ------------------------------------------------------------------------------------ |
-| Frontend                  | React and Vite (`client/`)                                                           |
-| Backend API               | Node.js and Express (`server/`)                                                      |
+| Frontend                  | React and Vite (`src/client/`)                                                           |
+| Backend API               | Node.js and Express (`src/server/`)                                                      |
 | Agent workflow            | Python multi-agent invoice workflow (`src/`)                                         |
 | Database                  | Firebase Cloud Firestore                                                             |
 | AI / inference            | Configurable OpenAI-compatible model API; RunPod may host/provide the model endpoint |
@@ -58,10 +58,13 @@ Liggy combines an invoice workflow with an AI agent that extracts invoice detail
 
 ```text
 sdc/
-├── client/                 # React + Vite frontend
-├── server/                 # Express API and Firebase Admin connection
-├── src/                    # Python invoice agent and workflow
-├── tests/                  # API security checks and lightweight load test
+├── src/                    # All application source code
+│   ├── client/              # React + Vite frontend
+│   ├── server/              # Express API and Firebase Admin connection
+│   ├── agents.py            # Invoice-agent verification logic
+│   ├── main.py              # Python invoice workflow entry point
+│   └── ...                  # Workflow, schema, database, PDF, and bridge modules
+├── tests/                  # API security, bridge, startup, and load checks
 ├── example_payment/        # Sample JPG payment invoices ordered by image clarity
 ├── docs/                   # Project documentation
 ├── runpod/                 # RunPod deployment notes and future assets
@@ -96,7 +99,7 @@ If the official template uses a different year or filename format, follow the te
 The application request path is:
 
 ```text
-Browser UI (client/) → API (server/) → invoice agent (src/) → AI model API
+Browser UI (src/client/) → API (src/server/) → invoice agent (Python modules in src/) → AI model API
                                              ├── Firestore: users and business records
                                              └── generated_invoices/: PDF files
 ```
@@ -139,7 +142,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-The dependency file is `requirements.txt` at the project root. The invoice-agent source code remains in `src/`.
+The dependency file is `requirements.txt` at the project root. The invoice-agent source code, website, and API are organized under `src/`. The Python requirements file remains at the project root.
 
 To print the full path to the Python executable inside this project's virtual environment, run this from the project root:
 
@@ -154,15 +157,15 @@ Copy the printed path into `PYTHON_EXECUTABLE` in `.env` in Step 5. For example,
 In the same terminal, run:
 
 ```powershell
-cd server
+cd src\server
 npm install
-cd ..
-cd client
+cd ..\..
+cd src\client
 npm install
-cd ..
+cd ..\..
 ```
 
-Run `npm install` separately in `server/` and `client/`; each folder has its own `package.json` and lockfile. The final `cd ..` returns the terminal to the project root.
+Run `npm install` separately in `src/server/` and `src/client/`; each folder has its own `package.json` and lockfile. The `cd ..\..` commands return the terminal to the project root.
 
 ## 4. Set up your AI API key and model
 
@@ -227,7 +230,7 @@ Open two VS Code terminals. Run both from the repository root before entering th
 ### Terminal 1 — API and Python invoice agent
 
 ```powershell
-cd server
+cd src\server
 npm start
 ```
 
@@ -236,7 +239,7 @@ Keep the terminal open. The API launches the Python invoice agent automatically.
 ### Terminal 2 — website
 
 ```powershell
-cd client
+cd src\client
 npm run dev
 ```
 
@@ -250,7 +253,7 @@ On **E-Invoice**, type invoice details or upload a PDF, JPG/JPEG, PNG, WebP, TXT
 
 ### Replit — frontend design and iteration
 
-The team used Replit to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above. The current live app is linked in [Project links](#project-links).
+The team used Replit to design and refine the required website interface. The resulting frontend belongs in `src/client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `src/client/` folder and run the app locally using the steps above. The current live app is linked in [Project links](#project-links).
 
 The browser talks to the Express API through `/api` requests. For a local run, keep provider API keys, Firebase service-account credentials, and other secrets in the root `.env`; never put them in React code or Vite client-side environment variables, where visitors could retrieve them. In Replit, add the required values through **Secrets** instead of committing an `.env` file.
 
@@ -268,7 +271,7 @@ Configure the RunPod endpoint in the root `.env`:
 - `AI_URL` — the endpoint's API base URL, using the format expected by its provider.
 - `BASEMODEL` — the model name or ID expected by the endpoint.
 
-The current invoice-agent implementation uses an OpenAI-compatible Chat Completions interface. Its model must support image input and tool/function calling. If Liggy AI Help uses that same endpoint, set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` to compatible values too; its model must support JSON responses. If the RunPod worker exposes a different request format, it needs a server-side adapter before it can work with this code. Do not expose the RunPod token in `client/`.
+The current invoice-agent implementation uses an OpenAI-compatible Chat Completions interface. Its model must support image input and tool/function calling. If Liggy AI Help uses that same endpoint, set `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `OPENAI_MODEL` to compatible values too; its model must support JSON responses. If the RunPod worker exposes a different request format, it needs a server-side adapter before it can work with this code. Do not expose the RunPod token in `src/client/`.
 
 RunPod is the team's configured AI service; another compatible AI provider can be used for local development by changing the environment values. Firestore is still needed for sign-in and saved customer/invoice records. The `runpod/` folder is currently documentation space; it does not contain an automatic deployment configuration. Add the completed official proof-of-use document at `submission/SDC2026_ChiliPanMEEPenang_Runpod_POU.pdf` when available.
 
@@ -305,8 +308,8 @@ The load script only calls `/api/health`; it does not create invoices or call th
 
 ## Troubleshooting
 
-- **`ERR_MODULE_NOT_FOUND` for a server package:** run `cd server` then `npm install`; wait for it to complete before `npm start`.
-- **Website start script not found:** use `npm run dev` from `client/`.
+- **`ERR_MODULE_NOT_FOUND` for a server package:** run `cd src\server` then `npm install`; wait for it to complete before `npm start`.
+- **Website start script not found:** use `npm run dev` from `src/client/`.
 - **Invoice agent cannot start:** confirm the Python requirements installed and `PYTHON_EXECUTABLE` points to `.venv/Scripts/python.exe`.
 - **AI request fails:** check `APIKEY`, `AI_URL`, `BASEMODEL`, and the matching `OPENAI_...` values in the root `.env`, then restart the backend.
 - **Firestore sign-in or save fails:** verify the Firebase project ID and service-account file path, or confirm the Firestore Emulator is running and `FIRESTORE_EMULATOR_HOST` is correct.

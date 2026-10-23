@@ -10,8 +10,8 @@ command -v npm >/dev/null 2>&1 || {
 }
 
 echo "Installing production server and client dependencies..."
-npm ci --prefix server
-npm ci --prefix client
+npm ci --prefix src/server
+npm ci --prefix src/client
 
 echo "Building Liggy client..."
-npm run build --prefix client
+npm run build --prefix src/client

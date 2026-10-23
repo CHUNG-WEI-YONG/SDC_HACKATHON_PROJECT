@@ -20,17 +20,25 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 def _db():
     """Return the shared Firestore client, initializing Firebase once per process."""
     if not firebase_admin._apps:
-project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-print(
-    "[Firebase/Python] STEP 1/3: initializing credentials "
-    f"(project={project_id or 'from credentials'}, "
-    f"service-account={'configured' if os.getenv('GOOGLE_APPLICATION_CREDENTIALS') else 'Application Default Credentials'}).",
-    file=sys.stderr,
-    flush=True,
-)
-options = {"projectId": project_id} if project_id else None
-firebase_admin.initialize_app(options=options)
-print("[Firebase/Python] STEP 2/3: Firebase Admin initialized.", file=sys.stderr, flush=True)
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+        has_service_account = bool(service_account_json or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+        print(
+            "[Firebase/Python] STEP 1/3: initializing credentials "
+            f"(project={project_id or 'from credentials'}, "
+            f"service-account={'configured' if has_service_account else 'Application Default Credentials'}).",
+            file=sys.stderr,
+            flush=True,
+        )
+        options = {"projectId": project_id} if project_id else None
+        if service_account_json:
+            firebase_admin.initialize_app(
+                credentials.Certificate(json.loads(service_account_json)),
+                options=options,
+            )
+        else:
+            firebase_admin.initialize_app(options=options)
+        print("[Firebase/Python] STEP 2/3: Firebase Admin initialized.", file=sys.stderr, flush=True)
     return firestore.client()
 
 

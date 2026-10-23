@@ -22,14 +22,14 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d server/node_modules/@google-cloud/firestore ]]; then
+if [[ ! -d src/server/node_modules/@google-cloud/firestore ]]; then
   echo "Installing backend packages..."
-  npm ci --prefix server
+  npm ci --prefix src/server
 fi
 
-if [[ ! -d client/node_modules ]]; then
+if [[ ! -d src/client/node_modules ]]; then
   echo "Installing frontend packages..."
-  npm ci --prefix client
+  npm ci --prefix src/client
 fi
 
 export PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-$(command -v python3)}"
@@ -40,7 +40,7 @@ if [[ -z "${SSL_CERT_FILE:-}" && -f /etc/ssl/certs/ca-certificates.crt ]]; then
 fi
 
 if [[ "$MODE" == "production" ]]; then
-  if [[ ! -f client/dist/index.html ]]; then
+  if [[ ! -f src/client/dist/index.html ]]; then
     echo "Production client build is missing. Run bash ./replit-build.sh before starting production." >&2
     exit 1
   fi
@@ -48,16 +48,16 @@ if [[ "$MODE" == "production" ]]; then
   export NODE_ENV=production
   export PORT="${PORT:-5000}"
   echo "Starting Liggy website and API in production mode on port ${PORT}..."
-  exec node server/index.js
+  exec node src/server/index.js
 fi
 
 # The Vite development server proxies /api requests to this local backend port.
 export PORT=3001
 export CLIENT_ORIGIN="${CLIENT_ORIGIN:-http://localhost:5000}"
 
-node server/index.js &
+node src/server/index.js &
 SERVER_PID=$!
-./client/node_modules/.bin/vite ./client --host 0.0.0.0 --port 5000 --strictPort &
+./src/client/node_modules/.bin/vite ./src/client --host 0.0.0.0 --port 5000 --strictPort &
 CLIENT_PID=$!
 
 cleanup() {
