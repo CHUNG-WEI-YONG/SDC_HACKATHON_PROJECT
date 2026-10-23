@@ -5,6 +5,8 @@ configuration as the Express Firebase Admin SDK.
 """
 
 import json
+import os
+import sys
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -16,7 +18,17 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 def _db():
     """Return the shared Firestore client, initializing Firebase once per process."""
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        print(
+            "[Firebase/Python] STEP 1/3: initializing credentials "
+            f"(project={project_id or 'from credentials'}, "
+            f"service-account={'configured' if os.getenv('GOOGLE_APPLICATION_CREDENTIALS') else 'Application Default Credentials'}).",
+            file=sys.stderr,
+            flush=True,
+        )
+        options = {"projectId": project_id} if project_id else None
+        firebase_admin.initialize_app(options=options)
+        print("[Firebase/Python] STEP 2/3: Firebase Admin initialized.", file=sys.stderr, flush=True)
     return firestore.client()
 
 
@@ -30,7 +42,19 @@ def _invoice_doc(user_id, invoice_no):
 
 def init_db():
     """Verify that Firebase credentials and Firestore configuration are usable."""
-    _db()
+    print("[Firebase/Python] STEP 3/3: checking Firestore access (read-only users collection check)...", file=sys.stderr, flush=True)
+    try:
+        _db().collection("users").limit(1).get()
+    except Exception as exc:
+        print(
+            f"[Firebase/Python] Firestore check failed ({type(exc).__name__}): {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise RuntimeError(
+            "Firestore startup check failed. Confirm GOOGLE_CLOUD_PROJECT matches the service-account JSON project_id and that the service account has Firestore access."
+        ) from exc
+    print("[Firebase/Python] Firestore read check succeeded.", file=sys.stderr, flush=True)
 
 
 def create_user(username, email, password_hash):
@@ -85,10 +109,13 @@ def log_invoice_to_db(invoice_data: dict, file_path: str, user_id: str, status: 
     customer = customer_ref.get().to_dict() or {"customer_name": customer_name}
     # Preserve the original display spelling of an existing customer record.
     customer_name = customer.get("customer_name", customer_name)
-    for source_key, target_key in (("customer_tin", "tin_number"), ("customer_registration_no", "registration_no"), ("customer_email", "email")):
+    for source_key, target_key in (("customer_tin", "tin_number"), ("customer_registration_no", "registration_no")):
         value = invoice_data.get(source_key)
         if value:
             customer[target_key] = value
+    invoice_email = (invoice_data.get("customer_email") or "").strip().lower()
+    if invoice_email and not customer.get("email"):
+        customer["email"] = invoice_email
     customer_ref.set(customer, merge=True)
 
     invoice_no = str(invoice_data["invoice_no"])
@@ -109,6 +136,19 @@ def log_invoice_to_db(invoice_data: dict, file_path: str, user_id: str, status: 
         "email_sent": False,
     }
     _invoice_doc(user_id, invoice_no).set(invoice)
+
+
+def update_customer_email(customer_name: str, email: str, user_id: str):
+    name = (customer_name or "").strip()
+    normalized_email = (email or "").strip().lower()
+    if not name or not normalized_email:
+        raise ValueError("Customer name and email are required.")
+    customer_ref = _user(user_id).collection("customers").document(quote(name.casefold(), safe=""))
+    snapshot = customer_ref.get()
+    if not snapshot.exists:
+        raise ValueError("The customer record was not found.")
+    customer_ref.update({"email": normalized_email})
+    return {"customer_name": snapshot.to_dict().get("customer_name", name), "email": normalized_email}
 
 
 def get_invoice_history(user_id: str):

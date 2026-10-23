@@ -3,31 +3,33 @@
 Liggy is an AI-assisted e-invoice application for small businesses. It helps users extract and review invoice information, create invoice PDFs, and keep customer and sales records. The React website is in `client/`, the Express API is in `server/`, and the Python multi-agent invoice workflow is in `src/`. Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
 
 > [!IMPORTANT]
+>
 > ## Submission documents and templates
+>
 > Download the required submission templates from the [Google Drive submission folder](https://drive.google.com/drive/folders/1xw7c2aN8N-at8hPEULzkcU76e_FFb0Ef) before completing the submission documents.
 
 ## Team and project
 
-|                         |                                                                        |
-| ----------------------- | ---------------------------------------------------------------------- |
-| **Team name**           | Chili Pan MEE Penang                                                   |
-| **Team domain**         | Domain 2 — Alpha Red                                                   |
-| **SDG track (1–17)**    | _[Fill in the selected SDG number and name]_                           |
-| **Team leader**         | Tai Kai Xuan                                                           |
-| **University**          | _[Fill in university name(s)]_                                         |
-| **Number of members**   | 5                                                                      |
-| **Team members**        | Soo Jiaquan, Tai Kai Xuan, Chung Wei Yong, Aaron Ling Ji Hong, Kenneth Saw Chzi Yang |
+|                       |                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| **Team name**         | Chili Pan MEE Penang                                                                 |
+| **Team domain**       | Domain 2 — Alpha Red                                                                 |
+| **SDG track (1–17)**  | _[Fill in the selected SDG number and name]_                                         |
+| **Team leader**       | Tai Kai Xuan                                                                         |
+| **University**        | _[Fill in university name(s)]_                                                       |
+| **Number of members** | 5                                                                                    |
+| **Team members**      | Soo Jiaquan, Tai Kai Xuan, Chung Wei Yong, Aaron Ling Ji Hong, Kenneth Saw Chzi Yang |
 
 ## Project links
 
-| Resource | Link |
-| --- | --- |
+| Resource          | Link                                                                             |
+| ----------------- | -------------------------------------------------------------------------------- |
 | GitHub repository | [SDC_HACKATHON_PROJECT](https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT) |
-| Replit project | _[Add the Replit project URL]_ |
-| Live demo | _[Add the live demo URL]_ |
-| RunPod endpoint | _[Add the public endpoint URL if applicable; never add an API key here]_ |
-| Slide deck | _[Add the slide deck URL]_ |
-| Demo video | _[Add the demo video URL]_ |
+| Replit project    | https://sdchackathonproject-2.replit.app                                         |
+| Live demo         | _[Add the live demo URL]_                                                        |
+| RunPod endpoint   | _[Add the public endpoint URL if applicable; never add an API key here]_         |
+| Slide deck        | _[Add the slide deck URL]_                                                       |
+| Demo video        | _[Add the demo video URL]_                                                       |
 
 ## Overview
 
@@ -48,14 +50,14 @@ Liggy combines an invoice workflow with an AI agent that extracts invoice detail
 
 ### Technology stack
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | React and Vite (`client/`) |
-| Backend API | Node.js and Express (`server/`) |
-| Agent workflow | Python multi-agent invoice workflow (`src/`) |
-| Database | Firebase Cloud Firestore |
-| AI / inference | Configurable OpenAI-compatible model API; RunPod may host/provide the model endpoint |
-| Development and UI design | VS Code for local development; Replit was used for frontend UI design and iteration |
+| Layer                     | Technology                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------ |
+| Frontend                  | React and Vite (`client/`)                                                           |
+| Backend API               | Node.js and Express (`server/`)                                                      |
+| Agent workflow            | Python multi-agent invoice workflow (`src/`)                                         |
+| Database                  | Firebase Cloud Firestore                                                             |
+| AI / inference            | Configurable OpenAI-compatible model API; RunPod may host/provide the model endpoint |
+| Development and UI design | VS Code for local development; Replit was used for frontend UI design and iteration  |
 
 ## Project structure
 
@@ -105,7 +107,7 @@ The app also needs an OpenAI-compatible AI provider and Firestore to analyze inv
 
 ## 1. Clone and open the project
 
-In PowerShell, run:
+Open PowerShell or the VS Code terminal and run:
 
 ```powershell
 git clone https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT.git
@@ -113,79 +115,108 @@ cd SDC_HACKATHON_PROJECT
 code .
 ```
 
-If `code .` does not work, open VS Code and use **File → Open Folder** to select `SDC_HACKATHON_PROJECT`.
+If `code .` is not recognized, open VS Code, choose **File → Open Folder**, and select the new `SDC_HACKATHON_PROJECT` folder.
 
-## 2. Create the Python environment and install agent requirements
-
-Run these commands from the repository root:
+When you already have the project and want newer changes, open its folder in VS Code and run:
 
 ```powershell
-py -m venv .venv
+git pull
+```
+
+If you have edited files locally, save open files, then commit or stash your code changes before pulling. Do not commit `.env` files, API keys, or Firebase service-account files.
+
+## 2. Install the Python invoice-agent requirements
+
+In the VS Code terminal, make sure the current folder is the project root, then run:
+
+```powershell
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-The Python requirements are at the repository root so setup and deployment tools can find them easily. The agent source code remains in `src/`.
+The dependency file is `requirements.txt` at the project root. The invoice-agent source code remains in `src/`.
 
-## 3. Install the website and API packages
+To print the full path to the Python executable inside this project's virtual environment, run this from the project root:
 
-From the repository root, run:
+```powershell
+.\.venv\Scripts\python.exe -c "import sys; print(sys.executable)"
+```
+
+Copy the printed path into `PYTHON_EXECUTABLE` in `.env` in Step 5. For example, it will look similar to `C:\Users\YourName\path\to\SDC_HACKATHON_PROJECT\.venv\Scripts\python.exe`. Forward slashes also work in `.env` values.
+
+## 3. Install the app requirements
+
+In the same terminal, run:
 
 ```powershell
 cd server
 npm install
-cd ..\client
+cd ..
+cd client
 npm install
 cd ..
 ```
 
-Run `npm install` separately in `server/` and `client/`; each folder has its own `package.json` and lockfile.
+Run `npm install` separately in `server/` and `client/`; each folder has its own `package.json` and lockfile. The final `cd ..` returns the terminal to the project root.
 
-## 4. Configure AI and Firestore
+## 4. Set up your AI API key and model
 
-Copy the root template to create your private configuration file:
+Get an API key from the AI provider you want to use. This API key is separate from your Firebase service-account JSON file. Copy the example file at the project root:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Open `.env` in VS Code and replace the example values:
+Open the root `.env` file in VS Code and replace the example AI values with the details from your provider:
 
 ```dotenv
-GOOGLE_CLOUD_PROJECT=your-firebase-project-id
-GOOGLE_APPLICATION_CREDENTIALS=C:/path/to/firebase-service-account.json
-
-PORT=3001
-CLIENT_ORIGIN=http://localhost:5173
-PYTHON_EXECUTABLE=C:/path/to/SDC_HACKATHON_PROJECT/.venv/Scripts/python.exe
-SESSION_SECRET=your-long-random-secret
-
+# Invoice agent: choose a model with image input and tool/function calling
 APIKEY=your_provider_api_key
-AI_URL=https://your-provider-api-base-url/v1
+AI_URL=https://your_provider_base_url/v1
 BASEMODEL=your_vision_and_tool_calling_model
 
+# Liggy Help chatbot: these can use the same provider settings if supported
 OPENAI_API_KEY=your_provider_api_key
-OPENAI_BASE_URL=https://your-provider-api-base-url/v1
+OPENAI_BASE_URL=https://your_provider_base_url/v1
 OPENAI_MODEL=your_json_capable_model
 ```
 
-Use your AI provider's documented API base URL and model names. The invoice-agent model must support image inputs and tool/function calling. The Liggy Help model must support JSON output. The `OPENAI_...` values may use the same key, URL, and model as the agent values when that model supports both workflows. These are OpenAI-compatible settings and do not require an OpenAI account.
+Use the exact base URL and model ID from your provider. The invoice agent needs image input for JPG and scanned documents, and tool/function calling to return structured invoice fields. The chatbot model needs JSON response support. If the same model supports both workflows, use the same key, URL, and model in both groups. These settings require an OpenAI-compatible API, not an OpenAI account. DeepSeek is optional; use the URL and model ID currently documented by whichever provider you choose.
 
-For `PYTHON_EXECUTABLE`, use the full path to the virtual environment Python created in Step 2. Forward slashes work in Windows `.env` paths. Generate a random session secret with:
+Keep `.env` private and do not upload it to GitHub. The app also reads Firebase and server settings from this same root `.env` file; fill those in during Step 5. Generate a random session secret with:
 
 ```powershell
-py -c "import secrets; print(secrets.token_urlsafe(48))"
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-### Firestore setup
+## 5. Set up Firebase Cloud Firestore
 
-For the standard local setup, create a Firebase project, enable **Cloud Firestore**, then create a service-account JSON key in **Project settings → Service accounts**. Save that key outside this repository and set `GOOGLE_CLOUD_PROJECT` and `GOOGLE_APPLICATION_CREDENTIALS` in `.env`. The service account needs permission to access Firestore.
+1. Create or select a project in the [Firebase console](https://console.firebase.google.com/).
+2. Create a **Cloud Firestore** database in **Native mode**.
+3. In **Project settings → Service accounts**, generate and download a service-account JSON key.
+4. Store the JSON file somewhere private, outside the project folder and outside GitHub.
 
-The app uses Firestore even when running locally because sign-in, customer records, and invoice history need a database. For local development without a cloud database, you can use the Firestore Emulator instead: install the Firebase CLI and Java, run `firebase emulators:start --only firestore --project demo-liggy` from the root, then set `GOOGLE_CLOUD_PROJECT=demo-liggy`, `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`, and leave `GOOGLE_APPLICATION_CREDENTIALS` blank. If the emulator selects a different port, use the port it reports. The emulator must stay running while you use the app.
+Open the root `.env` file and set these Firebase and server values:
+
+```dotenv
+GOOGLE_CLOUD_PROJECT=your-firebase-project-id
+GOOGLE_APPLICATION_CREDENTIALS=C:/full/path/to/your-firebase-service-account.json
+SESSION_SECRET=paste-the-random-value-you-generated
+PYTHON_EXECUTABLE=C:/full/path/to/SDC_HACKATHON_PROJECT/.venv/Scripts/python.exe
+```
+
+For `GOOGLE_CLOUD_PROJECT`, use the Firebase project's **Project ID**. For `GOOGLE_APPLICATION_CREDENTIALS`, use the full path to the downloaded JSON file. For `PYTHON_EXECUTABLE`, use the full path to the virtual-environment Python from Step 2. Forward slashes work in Windows `.env` paths. Do not paste the JSON contents into the README or commit the key file.
+
+The app's backend uses Firebase Admin credentials to access Firestore. Firebase is needed even when the website runs locally because account, customer, and invoice-history data are stored in the cloud database. This is not the Firebase web app configuration or a Firebase API key.
+
+If you already configured Google Application Default Credentials (ADC), leave `GOOGLE_APPLICATION_CREDENTIALS` blank. See Google's [local ADC setup guide](https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment).
+
+For local development without a cloud Firestore database, use the Firestore Emulator instead. Install the Firebase CLI and Java, run `firebase emulators:start --only firestore --project demo-liggy` from the project root, then set `GOOGLE_CLOUD_PROJECT=demo-liggy`, `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`, and leave `GOOGLE_APPLICATION_CREDENTIALS` blank. Keep the emulator running while you use the app.
 
 The SMTP fields in `.env.example` are optional. Configure them only if you want Liggy to send invoice PDFs by email.
 
-## 5. Run the backend and website
+## 6. Run the backend and website
 
 Open two VS Code terminals. Run both from the repository root before entering the folder commands.
 
@@ -217,7 +248,9 @@ On **E-Invoice**, type invoice details or upload a PDF, JPG/JPEG, PNG, WebP, TXT
 
 The team used Replit to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above. Add the Replit project URL in [Project links](#project-links) when it is ready.
 
-The browser talks to the Express API through `/api` requests. Keep provider API keys, Firebase service-account credentials, and other secrets in the backend's root `.env`; never put them in React code or Vite client-side environment variables, where visitors could retrieve them.
+The browser talks to the Express API through `/api` requests. For a local run, keep provider API keys, Firebase service-account credentials, and other secrets in the root `.env`; never put them in React code or Vite client-side environment variables, where visitors could retrieve them. In Replit, add the required values through **Secrets** instead of committing an `.env` file.
+
+The root [`.replit`](.replit) configuration runs [`replit-start.sh`](replit-start.sh), which prepares the Python and Node dependencies and starts the frontend and API for a Replit workspace preview. Add the AI settings as Replit Secrets. The current Firebase backend expects `GOOGLE_APPLICATION_CREDENTIALS` to point to a service-account JSON file, so make that file available privately in the Replit environment and set the path as a Secret; do not commit the key file. The Replit workspace run configuration is for preview and is not by itself a production deployment configuration.
 
 **Replit proof of use:** _[Add the completed proof-of-use document at `submission/SDC2026_ChiliPanMEEPenang_Replit_POU.pdf` after downloading and completing the official template.]_
 
@@ -246,13 +279,13 @@ _[Fill this section in before submission. Describe the main development or integ
 
 ## Team roles and profiles
 
-| Name | Role | GitHub profile |
-| --- | --- | --- |
-| Tai Kai Xuan | Team leader — _[add project role]_ | _[add profile link or leave blank]_ |
-| Soo Jiaquan | _[add project role]_ | _[add profile link or leave blank]_ |
-| Chung Wei Yong | _[add project role]_ | [@CHUNG-WEI-YONG](https://github.com/CHUNG-WEI-YONG) |
-| Aaron Ling Ji Hong | _[add project role]_ | _[add profile link or leave blank]_ |
-| Kenneth Saw Chzi Yang | _[add project role]_ | _[add profile link or leave blank]_ |
+| Name                  | Role                               | GitHub profile                                       |
+| --------------------- | ---------------------------------- | ---------------------------------------------------- |
+| Tai Kai Xuan          | Team leader — _[add project role]_ | _[add profile link or leave blank]_                  |
+| Soo Jiaquan           | _[add project role]_               | _[add profile link or leave blank]_                  |
+| Chung Wei Yong        | _[add project role]_               | [@CHUNG-WEI-YONG](https://github.com/CHUNG-WEI-YONG) |
+| Aaron Ling Ji Hong    | _[add project role]_               | _[add profile link or leave blank]_                  |
+| Kenneth Saw Chzi Yang | _[add project role]_               | _[add profile link or leave blank]_                  |
 
 ## Submission checklist
 

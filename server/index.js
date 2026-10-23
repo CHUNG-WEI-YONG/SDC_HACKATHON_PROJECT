@@ -137,6 +137,17 @@ function setSession(res, user) {
   res.setHeader("Set-Cookie", `liggy_session=${signSession(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800${secure}`);
 }
 
+function accountDatabaseMessage(error) {
+  const detail = String(error?.message || error || "");
+  if (/SERVICE_DISABLED|Cloud Firestore API has not been used|firestore\.googleapis\.com/i.test(detail)) {
+    return "Cloud Firestore API is disabled for this Firebase project. Enable the Cloud Firestore API in Google Cloud Console, create the Firestore database in Firebase Console, then restart Liggy.";
+  }
+  if (/PERMISSION_DENIED|permission/i.test(detail)) {
+    return "Firestore rejected the service account. Confirm the service-account key belongs to this Firebase project and has permission to access Firestore.";
+  }
+  return "The account database is unavailable. Check the backend terminal for the Firebase error, then verify the project ID and service-account credentials.";
+}
+
 app.post("/api/auth/register", async (req, res) => {
   const username = String(req.body?.username || "").trim();
   const email = String(req.body?.email || "").trim().toLowerCase();
@@ -154,7 +165,7 @@ app.post("/api/auth/register", async (req, res) => {
     res.status(duplicate ? 409 : 503).json({
       error: duplicate
         ? "An account with this email already exists. Sign in instead, or use a different email address."
-        : "Account creation is temporarily unavailable. Check the backend logs and Firebase/Firestore connection.",
+        : accountDatabaseMessage(error),
     });
   }
 });
@@ -169,7 +180,8 @@ app.post("/api/auth/login", async (req, res) => {
     setSession(res, user);
     res.json({ user });
   } catch (error) {
-    res.status(500).json({ error: "Unable to sign in." });
+    console.error("Account login failed:", error);
+    res.status(503).json({ error: accountDatabaseMessage(error) });
   }
 });
 
@@ -185,7 +197,10 @@ app.get("/api/auth/me", async (req, res) => {
     const user = await callInvoiceAgent({ action: "get_user", user_id: session.id });
     if (!user) return res.status(401).json({ error: "Account not found." });
     res.json({ user });
-  } catch { res.status(500).json({ error: "Unable to check your account." }); }
+  } catch (error) {
+    console.error("Account lookup failed:", error);
+    res.status(503).json({ error: accountDatabaseMessage(error) });
+  }
 });
 
 app.use("/api", async (req, res, next) => {
@@ -219,6 +234,27 @@ app.get("/api/business-data", async (req, res) => {
   } catch (error) {
     console.error("Business records error:", error.message);
     res.status(500).json({ error: error.message || "Unable to load business records." });
+  }
+});
+
+app.put("/api/customers/email", async (req, res) => {
+  const customerName = String(req.body?.customer_name || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!customerName) return res.status(400).json({ error: "Customer name is required." });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    return res.status(400).json({ error: "Enter a valid customer email address." });
+  }
+  try {
+    const customer = await callInvoiceAgent({
+      action: "update_customer_email",
+      user_id: req.user.id,
+      customer_name: customerName,
+      email,
+    });
+    res.json({ customer });
+  } catch (error) {
+    console.error("Customer email update failed:", error.message);
+    res.status(400).json({ error: error.message || "Unable to update this customer email." });
   }
 });
 
@@ -300,7 +336,8 @@ app.post("/api/invoices/:decision", async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("Invoice decision error:", error.message);
-    res.status(500).json({ error: error.message || "Unable to save this invoice decision." });
+    const invalidInvoice = /Tax ID ERROR|Enter a Malaysian TIN|Unit prices can have at most two decimal places/i.test(error.message || "");
+    res.status(invalidInvoice ? 400 : 500).json({ error: error.message || "Unable to save this invoice decision." });
   }
 });
 
