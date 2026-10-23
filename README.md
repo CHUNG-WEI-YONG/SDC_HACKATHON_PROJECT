@@ -14,22 +14,22 @@ Liggy is an AI-assisted e-invoice application for small businesses. It helps use
 | --------------------- | ------------------------------------------------------------------------------------ |
 | **Team name**         | Chili Pan MEE Penang                                                                 |
 | **Team domain**       | Domain 2 — Alpha Red                                                                 |
-| **SDG track (1–17)**  | _[Fill in the selected SDG number and name]_                                         |
+| **SDG track (1–17)**  | -                                                                                    |
 | **Team leader**       | Tai Kai Xuan                                                                         |
-| **University**        | _[Fill in university name(s)]_                                                       |
+| **University**        | Taylor University , University Teknologi Malaysia                                    |
 | **Number of members** | 5                                                                                    |
 | **Team members**      | Soo Jiaquan, Tai Kai Xuan, Chung Wei Yong, Aaron Ling Ji Hong, Kenneth Saw Chzi Yang |
 
 ## Project links
 
-| Resource          | Link                                                                             |
-| ----------------- | -------------------------------------------------------------------------------- |
-| GitHub repository | [SDC_HACKATHON_PROJECT](https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT) |
-| Replit project    | https://sdchackathonproject-2.replit.app                                         |
-| Live demo         | _[Add the live demo URL]_                                                        |
-| RunPod endpoint   | _[Add the public endpoint URL if applicable; never add an API key here]_         |
-| Slide deck        | _[Add the slide deck URL]_                                                       |
-| Demo video        | _[Add the demo video URL]_                                                       |
+| Resource            | Link                                                                             |
+| ------------------- | -------------------------------------------------------------------------------- |
+| GitHub repository   | [SDC_HACKATHON_PROJECT](https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT) |
+| Replit project      | https://sdchackathonproject-2.replit.app                                         |
+| Implementation demo | https://youtu.be/ESC0dAIl8T8                                                     |
+| RunPod endpoint     | Usage of Runpod in API for agent                                                 |
+| Slide deck          | _[Add the slide deck URL]_                                                       |
+| Demo video          | _[Add the demo video URL]_                                                       |
 
 ## Overview
 
