@@ -1,8 +1,11 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./style.css";
 
 function App() {
+  const errorBannerRef = useRef(null);
+  const invoiceReviewRef = useRef(null);
+  const generatedPdfRef = useRef(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState("login");
@@ -102,6 +105,20 @@ function App() {
       page === "Daily Sales Report" ? selectedDailyDate : selectedMonth,
     ));
   }, [page, invoiceHistory, user, selectedDailyDate, selectedMonth]);
+
+  useEffect(() => {
+    // Bring the next action or its explanation into view after async invoice work.
+    const target = error
+      ? errorBannerRef.current
+      : agentPdf
+        ? generatedPdfRef.current
+        : agentReview
+          ? invoiceReviewRef.current
+          : null;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+  }, [error, agentReview, agentPdf]);
 
   async function submitAuth(event) {
     event.preventDefault();
@@ -575,7 +592,7 @@ function App() {
 
         <div className="page-content">
           {error && (
-            <div className="error-banner">
+            <div ref={errorBannerRef} className="error-banner scroll-focus-target" role="alert" tabIndex={-1}>
               <span>{error}</span>
               <button onClick={() => setError("")}>Dismiss</button>
             </div>
@@ -707,7 +724,7 @@ function App() {
                 </form>
 
                 {agentReview && (
-                  <div className="agent-review-result">
+                  <div ref={invoiceReviewRef} className="agent-review-result scroll-focus-target" tabIndex={-1}>
                     <h3>{agentDecision ? "Invoice decision" : "Agent review complete"}</h3>
                     {agentReview.state?.verification_errors?.length > 0 && (
                       <div className="agent-verification-errors">
@@ -737,7 +754,7 @@ function App() {
               </section>
 
               {savedPdfPreview && (
-                <section className="panel invoice-generated-pdf">
+                <section ref={generatedPdfRef} className="panel invoice-generated-pdf scroll-focus-target" tabIndex={-1}>
                   <div className="panel-heading">
                     <div>
                       <p className="eyebrow">APPROVED E-INVOICE</p>

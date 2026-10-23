@@ -1059,6 +1059,12 @@ tbody tr:last-child td {
   font-weight: 700;
 }
 
+.scroll-focus-target:focus {
+  outline: 3px solid var(--green);
+  outline-offset: 4px;
+  scroll-margin-block: 24px;
+}
+
 @media (max-width: 1200px) {
   .sidebar {
     width: 215px;
