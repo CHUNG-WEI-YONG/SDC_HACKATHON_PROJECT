@@ -1,1 +1,2 @@
 - [Python TLS trust](python-tls-trust.md) — Python AI requests need the system trust store in this environment; never disable certificate verification.
+- [Port diagnostics](port-diagnostics.md) — `ss` is unavailable in this runner; use a short Node TCP probe to verify local port behavior.

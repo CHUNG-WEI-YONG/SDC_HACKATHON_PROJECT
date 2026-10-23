@@ -42,8 +42,8 @@ outputType = "webview"
 
 [deployment]
 deploymentTarget = "autoscale"
+build = ["bash", "./replit-build.sh"]
 run = ["bash", "./replit-start.sh", "production"]
-build = ["bash", "-lc", "npm ci --prefix server && npm ci --prefix client && npm run build --prefix client"]
 
 [userenv]
 

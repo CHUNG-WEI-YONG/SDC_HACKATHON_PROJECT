@@ -18,10 +18,15 @@ const { db } = await import("./firebaseAdmin.js");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const productionClientDirectory = path.join(projectRoot, "client", "dist");
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   throw new Error("Set SESSION_SECRET to a long random value before running Liggy in production.");
 }
 const SESSION_SECRET = process.env.SESSION_SECRET || "liggy-local-dev-secret-change-before-deploy";
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(productionClientDirectory, { index: false }));
+}
 
 app.use(cors({
   origin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
@@ -65,12 +70,16 @@ bridge.on("error", (error) => {
   for (const pending of pendingBridgeCalls.values()) pending.reject(error);
   pendingBridgeCalls.clear();
   console.error("Could not start the invoice agent. Check Python and the root requirements.txt.", error.message);
+  process.exit(1);
 });
 
-bridge.on("exit", (code) => {
-  const error = new Error(`Invoice agent process stopped${code === null ? "" : ` (code ${code})`}.`);
+bridge.on("exit", (code, signal) => {
+  const reason = code === null ? `signal ${signal || "unknown"}` : `code ${code}`;
+  const error = new Error(`Invoice agent process stopped (${reason}).`);
   for (const pending of pendingBridgeCalls.values()) pending.reject(error);
   pendingBridgeCalls.clear();
+  console.error(error.message);
+  process.exit(1);
 });
 
 function callInvoiceAgent(payload) {
@@ -398,9 +407,14 @@ app.get("/api/firebase-test", async (req, res) => {
 });
 
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(projectRoot, "client", "dist")));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    res.sendFile(path.join(productionClientDirectory, "index.html"), (error) => {
+      if (error && !res.headersSent) next(error);
+    });
+  });
 }
 
-app.listen(PORT, () => {
-  console.log(`Liggy backend running at http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Liggy ${process.env.NODE_ENV === "production" ? "website and API" : "backend"} running on port ${PORT}`);
 });
