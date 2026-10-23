@@ -17,25 +17,36 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-from src.main import InvoicePipelineService  # noqa: E402
+print(
+    "[Liggy bridge] STEP 1/3: environment loaded "
+    f"(Firebase project={os.getenv('GOOGLE_CLOUD_PROJECT') or 'from credentials'}).",
+    file=sys.stderr,
+    flush=True,
+)
 from src.database import (  # noqa: E402
     get_customers,
     get_invoice_by_number,
     get_invoice_history,
     init_db,
     mark_invoice_email_sent,
+    update_customer_email,
     create_user,
     get_user_by_email,
     get_user_by_id,
 )
 
+print("[Liggy bridge] STEP 2/3: checking Firebase/Firestore connection.", file=sys.stderr, flush=True)
 service = None
 init_db()
+print("[Liggy bridge] STEP 3/3: ready for account and invoice requests.", file=sys.stderr, flush=True)
 
 
 def get_service():
     global service
     if service is None:
+        print("[Liggy bridge] Loading invoice-agent workflow on first invoice request.", file=sys.stderr, flush=True)
+        from src.main import InvoicePipelineService
+
         service = InvoicePipelineService(
             api_key=os.getenv("APIKEY") or os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("AI_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_URL"),
@@ -53,6 +64,8 @@ def handle(request):
         return get_user_by_email(request["email"])
     if action == "get_user":
         return get_user_by_id(request["user_id"])
+    if action == "update_customer_email":
+        return update_customer_email(request.get("customer_name", ""), request.get("email", ""), user_id)
 
     user_id = request.get("user_id")
     if not user_id:
@@ -120,7 +133,9 @@ def handle(request):
         port = int(os.getenv("SMTP_PORT", "587"))
         sender = os.getenv("SMTP_FROM") or os.getenv("SMTP_USER")
         if not host or not sender:
-            raise ValueError("Email delivery is not configured. Set SMTP_HOST and SMTP_FROM in the server environment.")
+            raise ValueError(
+                "Email delivery is not configured. Add SMTP_HOST, SMTP_PORT, and SMTP_FROM to the project-root .env file; add SMTP_USER and SMTP_PASSWORD too if your provider requires login, then restart the backend."
+            )
 
         pdf_path = invoice.get("file_path") or ""
         if not pdf_path or not os.path.isfile(pdf_path):

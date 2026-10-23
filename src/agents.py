@@ -1,8 +1,26 @@
+import re
+
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from .schema import EInvoiceData, AgentState
 from .database import get_customer_info, log_invoice_to_db
 from .pdf_generators import generate_invoice_pdf
+
+MALAYSIA_TIN_PATTERN = re.compile(
+    r"^(?:IG\d{9,12}|(?:CS|FA|PT|TA|TC|TN|TR|TP|LE|C|D|E|F|J)(?!0)\d{8,11}0|EI00000000(?:10|20|30|40))$"
+)
+
+
+def normalize_malaysia_tin(value):
+    """Normalize and format-check an IRBM TIN; this does not query the IRBM registry."""
+    tin = re.sub(r"\s+", "", str(value or "")).upper()
+    if tin and not MALAYSIA_TIN_PATTERN.fullmatch(tin):
+        raise ValueError(
+            "Enter a Malaysian TIN in the registered IRBM format (for example, IG plus the individual digits, or a company prefix such as C with its digits ending in 0)."
+        )
+    return tin
+
+
 def create_extraction_node(llm):
 
     structured_llm = llm.with_structured_output(EInvoiceData, method="function_calling")
@@ -61,6 +79,12 @@ def verification_node(state: AgentState):
             data["customer_tin"] = info_record.get("tin_number", "")
     else:
         errors.append(f"Customer '{customer_name}' was not found in registered database.")
+
+    for field, label in (("customer_tin", "Buyer Tax ID"),):
+        try:
+            data[field] = normalize_malaysia_tin(data.get(field))
+        except ValueError as error:
+            errors.append(f"Tax ID ERROR: {label}: {error}")
 
     data["subtotal"] = round(float(data.get("subtotal") or 0), 2)
     data["tax"] = round(float(data.get("tax") or 0), 2)

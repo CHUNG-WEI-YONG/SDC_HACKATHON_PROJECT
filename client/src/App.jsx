@@ -1,8 +1,11 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./style.css";
 
 function App() {
+  const errorBannerRef = useRef(null);
+  const invoiceReviewRef = useRef(null);
+  const generatedPdfRef = useRef(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState("login");
@@ -19,6 +22,7 @@ function App() {
   const [customers, setCustomers] = useState([]);
   const [invoiceHistory, setInvoiceHistory] = useState([]);
   const [businessDataLoaded, setBusinessDataLoaded] = useState(false);
+  const [customerEmailDecision, setCustomerEmailDecision] = useState("");
   const [invoice, setInvoice] = useState({
     invoiceNo: "",
     seller: "",
@@ -49,6 +53,13 @@ function App() {
   const savedPdfPreview = agentPdf || (!agentReview && !loading
     ? invoiceHistory.find((record) => record.preview_url && record.download_url)
     : null);
+  const matchedBuyer = customers.find((customer) =>
+    customer.customer_name.toLowerCase() === invoice.buyer.trim().toLowerCase()
+  );
+  const customerEmailConflict = Boolean(
+    matchedBuyer?.email && invoice.buyerEmail.trim() &&
+    matchedBuyer.email.trim().toLowerCase() !== invoice.buyerEmail.trim().toLowerCase()
+  );
 
   async function refreshBusinessData() {
     const response = await fetch("/api/business-data");
@@ -95,6 +106,20 @@ function App() {
     ));
   }, [page, invoiceHistory, user, selectedDailyDate, selectedMonth]);
 
+  useEffect(() => {
+    // Bring the next action or its explanation into view after async invoice work.
+    const target = error
+      ? errorBannerRef.current
+      : agentPdf
+        ? generatedPdfRef.current
+        : agentReview
+          ? invoiceReviewRef.current
+          : null;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+  }, [error, agentReview, agentPdf]);
+
   async function submitAuth(event) {
     event.preventDefault();
     setAuthError("");
@@ -132,6 +157,10 @@ function App() {
   async function createInvoice(event) {
     event.preventDefault();
     setError("");
+    if (customerEmailConflict && !customerEmailDecision) {
+      setError("Choose whether to update the saved customer email or use the new email for this invoice only.");
+      return;
+    }
     setInvoiceNotice("");
     setEmailOutcome("");
     setLoading(true);
@@ -187,6 +216,7 @@ function App() {
   function useExtractedInvoice(state) {
     const data = state?.invoice_data || {};
     const items = data.items?.length ? data.items : [{ description: "", quantity: 1, unit_price: "" }];
+    setCustomerEmailDecision("");
     setInvoice({
       invoiceNo: data.invoice_no || "",
       seller: data.seller_name || "",
@@ -207,12 +237,36 @@ function App() {
 
   function updateBuyerName(name) {
     const match = customers.find((customer) => customer.customer_name.toLowerCase() === name.trim().toLowerCase());
+    setCustomerEmailDecision("");
     setInvoice((previous) => ({
       ...previous,
       buyer: name,
-      ...(previous.buyer.trim().toLowerCase() !== name.trim().toLowerCase() ? { buyerEmail: "" } : {}),
+      ...(previous.buyer.trim().toLowerCase() !== name.trim().toLowerCase() ? { buyerEmail: match?.email || "" } : {}),
       ...(match ? { buyerId: match.tin_number || "" } : {}),
     }));
+  }
+
+  async function chooseCustomerEmailChange(choice) {
+    if (choice === "invoice-only") {
+      setCustomerEmailDecision(choice);
+      return;
+    }
+    setError("");
+    setCustomerEmailDecision("updating");
+    try {
+      const response = await fetch("/api/customers/email", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customer_name: invoice.buyer, email: invoice.buyerEmail }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to update the customer email.");
+      setCustomerEmailDecision("updated");
+      await refreshBusinessData();
+    } catch (err) {
+      setCustomerEmailDecision("");
+      setError(err.message);
+    }
   }
 
   async function sendHistoricalInvoiceEmail(record) {
@@ -282,6 +336,10 @@ function App() {
 
   async function decideInvoice(decision) {
     if (!agentReview?.thread_id) return;
+    if (decision === "approve" && customerEmailConflict && !customerEmailDecision) {
+      setError("Choose whether to update the saved customer email or use the new email for this invoice only.");
+      return;
+    }
     const reviewBeingDecided = agentReview;
     // Remove the verification panel as soon as the user makes a decision.
     // Restore it only if the server rejects the request so they can retry.
@@ -534,7 +592,7 @@ function App() {
 
         <div className="page-content">
           {error && (
-            <div className="error-banner">
+            <div ref={errorBannerRef} className="error-banner scroll-focus-target" role="alert" tabIndex={-1}>
               <span>{error}</span>
               <button onClick={() => setError("")}>Dismiss</button>
             </div>
@@ -666,7 +724,7 @@ function App() {
                 </form>
 
                 {agentReview && (
-                  <div className="agent-review-result">
+                  <div ref={invoiceReviewRef} className="agent-review-result scroll-focus-target" tabIndex={-1}>
                     <h3>{agentDecision ? "Invoice decision" : "Agent review complete"}</h3>
                     {agentReview.state?.verification_errors?.length > 0 && (
                       <div className="agent-verification-errors">
@@ -679,7 +737,7 @@ function App() {
                     )}
                     {!agentDecision ? (
                       <div className="agent-decision-actions">
-                        <button className="primary-button" onClick={() => decideInvoice("approve")} disabled={loading || !invoice.seller || !invoice.buyer || !invoice.date || invoiceItems.some((item) => !item.description || Number(item.quantity) <= 0)}>
+                        <button className="primary-button" onClick={() => decideInvoice("approve")} disabled={loading || !invoice.seller || !invoice.buyer || !invoice.date || (customerEmailConflict && !customerEmailDecision) || invoiceItems.some((item) => !item.description || Number(item.quantity) <= 0)}>
                           {loading ? "Saving..." : "Approve and Save PDF"}
                         </button>
                         <button className="secondary-button" onClick={() => decideInvoice("reject")} disabled={loading}>
@@ -696,7 +754,7 @@ function App() {
               </section>
 
               {savedPdfPreview && (
-                <section className="panel invoice-generated-pdf">
+                <section ref={generatedPdfRef} className="panel invoice-generated-pdf scroll-focus-target" tabIndex={-1}>
                   <div className="panel-heading">
                     <div>
                       <p className="eyebrow">APPROVED E-INVOICE</p>
@@ -767,24 +825,37 @@ function App() {
                         type="text"
                         autoCapitalize="characters"
                         maxLength={14}
-                        pattern="(?:IG[0-9]{9,12}|(?:C|CS|D|F|FA|PT|TA|TC|TN|TR|TP|J|LE)[0-9]{8,11}0|EI00000000(?:10|20|30|40))"
+                        pattern="(?:IG[0-9]{9,12}|(?:CS|FA|PT|TA|TC|TN|TR|TP|LE|C|D|E|F|J)(?!0)[0-9]{8,11}0|EI00000000(?:10|20|30|40))"
                         value={invoice.buyerId}
                         onChange={(e) =>
                           setInvoice({ ...invoice, buyerId: e.target.value.toUpperCase().replace(/\s+/g, "") })
                         }
                         placeholder="e.g. C2584563200 or IG123456789"
                       />
-                      <small className="small-note">Use the IRBM TIN shown in MyTax. Malaysian individual TINs use IG; business TINs use their registered prefix.</small>
+                      <small className="small-note">Liggy checks the Malaysian TIN format. This local check does not confirm the taxpayer against the IRBM registry; use the TIN shown in MyTax.</small>
                     </Field>
 
                     <Field label="Buyer Email (optional)">
                       <input
                         type="email"
                         value={invoice.buyerEmail}
-                        onChange={(e) => setInvoice({ ...invoice, buyerEmail: e.target.value })}
+                        onChange={(e) => { setInvoice({ ...invoice, buyerEmail: e.target.value }); setCustomerEmailDecision(""); }}
                         placeholder="billing@example.com"
                       />
                     </Field>
+                    {customerEmailConflict && (
+                      <div className="customer-email-conflict" role="group" aria-label="Customer email change confirmation">
+                        <p><strong>{matchedBuyer.customer_name}</strong> already has saved email <strong>{matchedBuyer.email}</strong>. Should Liggy update the customer record?</p>
+                        <div className="customer-email-actions">
+                          <button type="button" className="primary-button" onClick={() => chooseCustomerEmailChange("update")} disabled={customerEmailDecision === "updating"}>
+                            {customerEmailDecision === "updating" ? "Updating…" : "Update customer email"}
+                          </button>
+                          <button type="button" className="secondary-button" onClick={() => chooseCustomerEmailChange("invoice-only")}>Use for this invoice only</button>
+                        </div>
+                      </div>
+                    )}
+                    {customerEmailConflict && customerEmailDecision === "updated" && <p className="small-note" role="status">Customer record updated. This invoice will use the new email.</p>}
+                    {customerEmailConflict && customerEmailDecision === "invoice-only" && <p className="small-note" role="status">The customer record will keep its saved email; this invoice will use the new email.</p>}
 
                     <Field label="Invoice Date *">
                       <input
@@ -821,7 +892,8 @@ function App() {
                           <Field label={`Unit Price (${invoice.currency}) *`}>
                             <input type="text" inputMode="decimal" pattern="[0-9]+([.][0-9]{1,2})?|[.][0-9]{1,2}" value={item.unit_price} onChange={(e) => {
                               const value = e.target.value;
-                              if (/^\d*(?:\.\d{0,2})?$/.test(value)) setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, unit_price: value } : entry));
+                              const normalized = normalizeMoneyInput(value);
+                              if (normalized !== null) setInvoiceItems(invoiceItems.map((entry, i) => i === index ? { ...entry, unit_price: normalized } : entry));
                             }} required />
                           </Field>
                           {invoiceItems.length > 1 && <button type="button" className="text-button" onClick={() => setInvoiceItems(invoiceItems.filter((_, i) => i !== index))}>Remove</button>}
@@ -830,7 +902,7 @@ function App() {
                     </div>
 
                     <Field label={`Tax amount (${invoice.currency})`}>
-                      <input type="number" min="0" step="0.01" value={invoice.tax} onChange={(e) => setInvoice({ ...invoice, tax: e.target.value })} />
+                      <input type="text" inputMode="decimal" pattern="[0-9]+([.][0-9]{1,2})?|[.][0-9]{1,2}" value={invoice.tax} onChange={(e) => { const normalized = normalizeMoneyInput(e.target.value); if (normalized !== null) setInvoice({ ...invoice, tax: normalized }); }} />
                     </Field>
 
                     <Field label="Notes (optional)">
@@ -1363,6 +1435,13 @@ function LiveReportSummary({ report }) {
 function getLocalToday() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function normalizeMoneyInput(value) {
+  const text = String(value ?? "");
+  if (!/^\d*(?:\.\d*)?$/.test(text)) return null;
+  const fraction = text.split(".")[1] || "";
+  return fraction.length > 2 ? Number(text).toFixed(2) : text;
 }
 
 function buildSalesReport(invoices, type, selectedPeriod) {

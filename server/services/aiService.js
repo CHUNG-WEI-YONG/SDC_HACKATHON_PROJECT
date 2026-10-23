@@ -15,7 +15,7 @@ Liggy workflow facts:
 - Approving saves the invoice PDF and invoice history, updates that account's customer record, and feeds the daily sales report and monthly insights. Rejecting does not save an approved invoice.
 - A customer email is optional. After save, Liggy asks whether to send the invoice when an email address is available. Email delivery also requires the app owner to configure SMTP.
 - Saved PDFs can be previewed or downloaded from the invoice screen and Invoice History.
-- Daily Sales Report summarizes approved invoices dated today; Monthly Insights summarizes the current month. Both are based on saved invoices for the signed-in account.
+- Daily Sales Report lets the user choose any past date; Monthly Insights lets the user choose any past month. Both are based on saved invoices for the signed-in account.
 - Do not claim that you can see, change, approve, or send a user's records. Explain where the user can do those actions in the app.
 - Do not give tax or legal compliance guarantees. Recommend checking the invoice details before approval.
 

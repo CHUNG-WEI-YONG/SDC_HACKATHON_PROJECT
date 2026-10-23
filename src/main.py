@@ -1,5 +1,4 @@
 import os
-import re
 import uuid
 from datetime import date
 from pathlib import Path
@@ -10,19 +9,9 @@ from dotenv import load_dotenv
 from .database import init_db
 from .workflow import build_workflow
 from .document_reader import read_document
-from .agents import verification_node
+from .agents import normalize_malaysia_tin, verification_node
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MALAYSIA_TIN_PATTERN = re.compile(
-    r"^(?:IG\d{9,12}|(?:C|CS|D|F|FA|PT|TA|TC|TN|TR|TP|J|LE)\d{8,11}0|EI00000000(?:10|20|30|40))$"
-)
-
-
-def normalize_malaysia_tin(value):
-    tin = re.sub(r"\s+", "", str(value or "")).upper()
-    if tin and not MALAYSIA_TIN_PATTERN.fullmatch(tin):
-        raise ValueError("Enter a valid Malaysian TIN: use an IRBM prefix (such as IG for an individual or C for a company) followed by the registered digits.")
-    return tin
 load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -176,7 +165,7 @@ class InvoicePipelineService:
                 current = state.get("invoice_data") or {}
                 merged = {**current, **{
                     key: value for key, value in invoice_data.items()
-                    if value is not None and value != ""
+                    if value is not None and (value != "" or key == "customer_tin")
                 }}
                 items = merged.get("items") or []
                 normalized_items = []
@@ -197,6 +186,9 @@ class InvoicePipelineService:
                 merged["tax"] = round(float(merged.get("tax") or 0), 2)
                 merged["total_amount"] = round(merged["subtotal"] + merged["tax"], 2)
                 checked = verification_node({**state, "invoice_data": merged})
+                tax_errors = [error for error in checked["verification_errors"] if error.startswith("Tax ID ERROR:")]
+                if tax_errors:
+                    raise ValueError("Invoice approval stopped. " + " ".join(tax_errors))
                 updates.update(checked)
             self.app.update_state(config, updates)
             for _ in self.app.stream(None, config=config):
