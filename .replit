@@ -50,3 +50,7 @@ run = ["bash", "./replit-start.sh", "production"]
 [userenv.shared]
 OPENAI_BASE_URL = "https://api.deepseek.com"
 OPENAI_MODEL = "deepseek-chat"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000

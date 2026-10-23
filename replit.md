@@ -15,6 +15,8 @@ Python environment; no virtual environment is needed.
 Replit's publish builder uses the Poetry manifest and lockfile
 (`pyproject.toml` and `poetry.lock`) for the Python agent. `requirements.txt`
 remains available for the existing pip-based local setup instructions.
+After task merges, `scripts/post-merge.sh` installs locked dependencies and
+rebuilds the client. It does not run database migrations or change account data.
 Node.js 22 is required by the imported Firebase Admin dependency.
 The launcher sets `SSL_CERT_FILE` to the system CA bundle when no custom value
 is configured, so Python AI requests use the environment's trusted certificates
