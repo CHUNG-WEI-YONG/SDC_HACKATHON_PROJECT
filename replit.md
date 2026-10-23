@@ -45,5 +45,8 @@ AI configuration, invoice processing is unavailable.
 ## Checks
 
 - `npm run build --prefix client`
-- `GET /api/health` through the website checks that the Express proxy works.
+- `GET /api/health` returns 200 once the Python bridge signals readiness, or 503
+  while starting or after bridge failure. The website remains available in both
+  cases. This is bridge readiness, not a live check of AI or Firestore availability.
+- `node --test tests/bridge-readiness.test.mjs` checks bridge readiness and failures.
 - Account, invoice, PDF, and AI checks require the external services above.

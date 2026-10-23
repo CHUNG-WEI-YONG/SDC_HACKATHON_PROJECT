@@ -157,6 +157,10 @@ def handle(request):
     raise ValueError("Unknown invoice action.")
 
 
+# Announce readiness only after imports and database initialization succeed.
+sys.stdout.write(json.dumps({"type": "ready"}) + "\n")
+sys.stdout.flush()
+
 for line in sys.stdin:
     request = None
     try:

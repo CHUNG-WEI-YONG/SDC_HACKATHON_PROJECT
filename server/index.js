@@ -45,6 +45,13 @@ const bridge = spawn(process.env.PYTHON_EXECUTABLE || "python", [
 const pendingBridgeCalls = new Map();
 const invoiceReviewOwners = new Map();
 let bridgeOutput = "";
+let bridgeState = "starting";
+
+function markBridgeFailed(error) {
+  bridgeState = "failed";
+  for (const pending of pendingBridgeCalls.values()) pending.reject(error);
+  pendingBridgeCalls.clear();
+}
 
 bridge.stdout.setEncoding("utf8");
 bridge.stdout.on("data", (chunk) => {
@@ -55,6 +62,10 @@ bridge.stdout.on("data", (chunk) => {
     if (!line.trim()) continue;
     try {
       const message = JSON.parse(line);
+      if (message.type === "ready") {
+        if (bridgeState === "starting") bridgeState = "ready";
+        continue;
+      }
       const pending = pendingBridgeCalls.get(message.id);
       if (!pending) continue;
       pendingBridgeCalls.delete(message.id);
@@ -67,23 +78,24 @@ bridge.stdout.on("data", (chunk) => {
 });
 
 bridge.on("error", (error) => {
-  for (const pending of pendingBridgeCalls.values()) pending.reject(error);
-  pendingBridgeCalls.clear();
+  markBridgeFailed(error);
   console.error("Could not start the invoice agent. Check Python and the root requirements.txt.", error.message);
-  process.exit(1);
 });
 
 bridge.on("exit", (code, signal) => {
   const reason = code === null ? `signal ${signal || "unknown"}` : `code ${code}`;
   const error = new Error(`Invoice agent process stopped (${reason}).`);
-  for (const pending of pendingBridgeCalls.values()) pending.reject(error);
-  pendingBridgeCalls.clear();
+  markBridgeFailed(error);
   console.error(error.message);
-  process.exit(1);
 });
 
+// A broken pipe must not become an uncaught error that stops the website.
+bridge.stdin.on("error", markBridgeFailed);
+bridge.stdout.on("error", markBridgeFailed);
+bridge.stdout.on("end", () => markBridgeFailed(new Error("Invoice agent output closed.")));
+
 function callInvoiceAgent(payload) {
-  if (!bridge.stdin.writable) {
+  if (bridgeState !== "ready" || !bridge.stdin.writable) {
     throw new Error("Invoice agent is unavailable. Restart the backend and check Python dependencies.");
   }
   const id = randomUUID();
@@ -91,18 +103,20 @@ function callInvoiceAgent(payload) {
     pendingBridgeCalls.set(id, { resolve, reject });
     bridge.stdin.write(`${JSON.stringify({ ...payload, id })}\n`, (error) => {
       if (error) {
-        pendingBridgeCalls.delete(id);
-        reject(error);
+        markBridgeFailed(error);
       }
     });
   });
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
+  const ready = bridgeState === "ready";
+  res.set("Cache-Control", "no-store");
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
     app: "Liggy",
-    message: "Backend is running!"
+    invoiceAgent: bridgeState,
+    message: ready ? "Backend is ready!" : "Invoice service is temporarily unavailable."
   });
 });
 
