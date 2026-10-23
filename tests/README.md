@@ -1,5 +1,27 @@
 # Run the app checks
 
+## Isolated production startup regression check
+
+On Linux with Node.js 22, npm, Bash, and Python 3 available, run:
+
+```sh
+node --test tests/production-startup.test.mjs
+```
+
+No running app or service credentials are needed. This copies the app into a
+temporary directory (excluding environment files), runs the actual deployment
+build script with locked dependencies, and starts the production launcher on an
+ephemeral port. npm registry access is needed for the clean install. It checks
+the website root, a built JavaScript asset, health JSON, and signed-out API
+rejection. A fake ready invoice process replaces Python service calls; Firestore
+is pointed at an unused local emulator address and no database operations run.
+
+It also checks a missing required production configuration and injects a required development
+API child failure to verify nonzero exit reporting and sibling cleanup. All
+spawned process groups and temporary files are cleaned up, including on assertion
+failure. The test does not change the running app or its build output. It does
+not verify real AI/Firestore readiness or invoice processing.
+
 These checks use Node.js and its built-in test and `fetch` features. They do not need another package install. Start with the security checks, then increase the load level gradually.
 
 ## 1. Start the backend
