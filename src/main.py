@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import date
 from pathlib import Path
@@ -12,6 +13,16 @@ from .document_reader import read_document
 from .agents import verification_node
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MALAYSIA_TIN_PATTERN = re.compile(
+    r"^(?:IG\d{9,12}|(?:C|CS|D|F|FA|PT|TA|TC|TN|TR|TP|J|LE)\d{8,11}0|EI00000000(?:10|20|30|40))$"
+)
+
+
+def normalize_malaysia_tin(value):
+    tin = re.sub(r"\s+", "", str(value or "")).upper()
+    if tin and not MALAYSIA_TIN_PATTERN.fullmatch(tin):
+        raise ValueError("Enter a valid Malaysian TIN: use an IRBM prefix (such as IG for an individual or C for a company) followed by the registered digits.")
+    return tin
 load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -91,6 +102,8 @@ class InvoicePipelineService:
         for item in items:
             quantity = float(item.get("quantity") or 0)
             unit_price = float(item.get("unit_price") or 0)
+            if round(unit_price, 2) != unit_price:
+                raise ValueError("Unit prices can have at most two decimal places.")
             normalized_items.append({
                 "description": str(item.get("description") or "").strip(),
                 "quantity": quantity,
@@ -105,7 +118,7 @@ class InvoicePipelineService:
             "seller_name": str(invoice_data.get("seller_name") or "").strip(),
             "seller_tin": str(invoice_data.get("seller_tin") or "").strip(),
             "customer_name": str(invoice_data.get("customer_name") or "").strip(),
-            "customer_tin": str(invoice_data.get("customer_tin") or "").strip(),
+            "customer_tin": normalize_malaysia_tin(invoice_data.get("customer_tin")),
             "customer_email": str(invoice_data.get("customer_email") or "").strip(),
             "items": normalized_items,
             "subtotal": subtotal,
@@ -170,6 +183,8 @@ class InvoicePipelineService:
                 for item in items:
                     quantity = float(item.get("quantity") or 0)
                     unit_price = float(item.get("unit_price") or 0)
+                    if round(unit_price, 2) != unit_price:
+                        raise ValueError("Unit prices can have at most two decimal places.")
                     normalized_items.append({
                         **item,
                         "quantity": quantity,
@@ -177,6 +192,7 @@ class InvoicePipelineService:
                         "total": round(quantity * unit_price, 2),
                     })
                 merged["items"] = normalized_items
+                merged["customer_tin"] = normalize_malaysia_tin(merged.get("customer_tin"))
                 merged["subtotal"] = round(sum(item["total"] for item in normalized_items), 2)
                 merged["tax"] = round(float(merged.get("tax") or 0), 2)
                 merged["total_amount"] = round(merged["subtotal"] + merged["tax"], 2)

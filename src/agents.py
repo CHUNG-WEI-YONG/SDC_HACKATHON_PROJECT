@@ -33,11 +33,11 @@ def verification_node(state: AgentState):
     calculated_subtotal = 0.0
     for item in data.get("items", []):
         qty = float(item.get("quantity") or 1.0)
-        price = float(item.get("unit_price") or 0.0)
+        price = round(float(item.get("unit_price") or 0.0), 2)
+        item["unit_price"] = price
         tot = item.get("total")
-        if tot is None:
-            tot = qty * price
-            item["total"] = tot
+        tot = round(qty * price, 2)
+        item["total"] = tot
         calculated_subtotal += float(tot)
 
     if data.get("subtotal") is None:
@@ -59,8 +59,6 @@ def verification_node(state: AgentState):
     if info_record:
         if not data.get("customer_tin"):
             data["customer_tin"] = info_record.get("tin_number", "")
-        if not data.get("customer_email"):
-            data["customer_email"] = info_record.get("email", "")
     else:
         errors.append(f"Customer '{customer_name}' was not found in registered database.")
 
