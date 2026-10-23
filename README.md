@@ -2,11 +2,6 @@
 
 Liggy is an AI-assisted e-invoice application for small businesses. It helps users extract and review invoice information, create invoice PDFs, and keep customer and sales records. The React website is in `client/`, the Express API is in `server/`, and the Python multi-agent invoice workflow is in `src/`. Firestore stores user accounts, customers, and invoices. Approved invoice PDFs are written to `generated_invoices/` on the computer running the backend.
 
-> [!IMPORTANT]
->
-> ## Submission documents and templates
->
-> Download the required submission templates from the [Google Drive submission folder](https://drive.google.com/drive/folders/1xw7c2aN8N-at8hPEULzkcU76e_FFb0Ef) before completing the submission documents.
 
 ## Team and project
 
@@ -25,7 +20,7 @@ Liggy is an AI-assisted e-invoice application for small businesses. It helps use
 | Resource            | Link                                                                             |
 | ------------------- | -------------------------------------------------------------------------------- |
 | GitHub repository   | [SDC_HACKATHON_PROJECT](https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT) |
-| Replit project      | https://sdchackathonproject-2.replit.app                                         |
+| Replit live app     | [Open Liggy on Replit](https://sdchackathonproject-2.replit.app/)                 |
 | Implementation demo | https://youtu.be/ESC0dAIl8T8                                                     |
 | RunPod endpoint     | Usage of Runpod in API for agent                                                 |
 | Slide deck          | _[Add the slide deck URL]_                                                       |
@@ -67,6 +62,7 @@ sdc/
 ├── server/                 # Express API and Firebase Admin connection
 ├── src/                    # Python invoice agent and workflow
 ├── tests/                  # API security checks and lightweight load test
+├── example_payment/        # Sample JPG payment invoices ordered by image clarity
 ├── docs/                   # Project documentation
 ├── runpod/                 # RunPod deployment notes and future assets
 ├── submission/             # Final report, slides, and demo materials
@@ -76,6 +72,14 @@ sdc/
 ├── firebase.json           # Firebase CLI Firestore rules configuration
 └── README.md               # Setup and project guide
 ```
+
+### JPG payment image examples
+
+The [`example_payment/`](example_payment/) folder is for sample JPG payment or invoice images used to check how well the document-upload workflow handles different image quality. Place ten JPG files there and number them by clarity: **level 1 is the clearest** and **level 10 is the least clear**. Suggested names are `level-01.jpg` through `level-10.jpg`.
+
+To use an example, start Liggy, open **E-Invoice**, select the JPG, and choose **Analyze Invoice**. Compare the extracted fields with the image, note which details need manual correction, and verify that unclear or unreadable details are surfaced for review before approval. These examples are manual workflow samples; they are not automatically run by the Node test scripts in `tests/`.
+
+The folder is currently empty in this checkout. Add only images that are safe to share with the project; remove real customer names, account numbers, and other private payment details before committing them.
 
 The `submission/` folder is where the team can place completed submission files. Use the official templates from the Google Drive folder above. Rename each file to include the team name where required. Expected documents (confirm exact names in the downloaded templates):
 
@@ -246,7 +250,7 @@ On **E-Invoice**, type invoice details or upload a PDF, JPG/JPEG, PNG, WebP, TXT
 
 ### Replit — frontend design and iteration
 
-The team used Replit to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above. Add the Replit project URL in [Project links](#project-links) when it is ready.
+The team used Replit to design and refine the required website interface. The resulting frontend belongs in `client/`, which contains the React pages, components, and styles. When transferring a UI change from Replit, bring the updated frontend files into this project's `client/` folder and run the app locally using the steps above. The current live app is linked in [Project links](#project-links).
 
 The browser talks to the Express API through `/api` requests. For a local run, keep provider API keys, Firebase service-account credentials, and other secrets in the root `.env`; never put them in React code or Vite client-side environment variables, where visitors could retrieve them. In Replit, add the required values through **Secrets** instead of committing an `.env` file.
 
@@ -287,16 +291,6 @@ _[Fill this section in before submission. Describe the main development or integ
 | Aaron Ling Ji Hong    | _[add project role]_               | _[add profile link or leave blank]_                  |
 | Kenneth Saw Chzi Yang | _[add project role]_               | _[add profile link or leave blank]_                  |
 
-## Submission checklist
-
-- [ ] Confirm the team name and domain are correct in the downloaded submission forms.
-- [ ] Fill in the SDG track and university name(s) above.
-- [ ] Add the Replit project, live demo, RunPod endpoint (if requested), slide deck, and demo video links above.
-- [ ] Complete the preliminary submission and technology declaration using the official templates.
-- [ ] Complete Replit and RunPod proof-of-use documents using the official templates.
-- [ ] Add final submission documents to `submission/` and follow the official filename convention.
-- [ ] Follow the setup steps below to verify the app can run locally.
-- [ ] Check that no API keys, `.env` files, service-account keys, or other secrets are included in submitted files.
 
 ## Run the security and load checks
 
