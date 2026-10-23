@@ -216,3 +216,12 @@ def mark_invoice_email_sent(invoice_no: str, user_id: str):
         return False
     ref.update({"email_sent": True})
     return True
+
+
+def update_invoice_file_path(invoice_no: str, file_path: str, user_id: str):
+    """Persist a repaired/generated PDF location for an existing invoice."""
+    ref = _invoice_doc(user_id, invoice_no)
+    if not ref.get().exists:
+        return False
+    ref.update({"file_path": file_path})
+    return True

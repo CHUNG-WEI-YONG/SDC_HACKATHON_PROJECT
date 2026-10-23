@@ -383,18 +383,24 @@ app.get("/api/invoices/files/:fileName", async (req, res) => {
     return res.status(400).json({ error: "Invalid invoice file." });
   }
 
-  const invoicesDirectory = path.resolve(projectRoot, "generated_invoices");
-  const filePath = path.resolve(invoicesDirectory, fileName);
-  if (!filePath.startsWith(`${invoicesDirectory}${path.sep}`)) {
-    return res.status(400).json({ error: "Invalid invoice file." });
-  }
-
+  let filePath;
   try {
-    const data = await callInvoiceAgent({ action: "business_data", user_id: req.user.id });
-    const ownsFile = data.invoices.some((invoice) => path.basename(invoice.file_path || "") === fileName);
-    if (!ownsFile) return res.status(404).json({ error: "Invoice PDF was not found." });
-  } catch {
-    return res.status(500).json({ error: "Unable to verify invoice ownership." });
+    // The PDF may have been generated before a folder move, or its local file
+    // may have been removed while the Firestore invoice record remained. Ask
+    // the invoice process to locate it or recreate it from the saved details.
+    const restored = await callInvoiceAgent({
+      action: "restore_invoice_pdf",
+      user_id: req.user.id,
+      file_name: fileName,
+    });
+    filePath = path.resolve(restored.file_path || "");
+    if (!filePath || path.extname(filePath).toLowerCase() !== ".pdf") {
+      return res.status(404).json({ error: "Invoice PDF was not found." });
+    }
+  } catch (error) {
+    console.warn(`Invoice PDF lookup failed for ${fileName}:`, error.message);
+    const status = /not found|no saved details/i.test(error.message || "") ? 404 : 500;
+    return res.status(status).json({ error: status === 404 ? error.message : "Unable to load this invoice PDF." });
   }
 
   const disposition = req.query.download === "1" ? "attachment" : "inline";

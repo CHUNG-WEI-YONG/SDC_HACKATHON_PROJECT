@@ -33,7 +33,9 @@ from src.database import (  # noqa: E402
     create_user,
     get_user_by_email,
     get_user_by_id,
+    update_invoice_file_path,
 )
+from src.pdf_generators import generate_invoice_pdf
 
 print("[Liggy bridge] STEP 2/3: checking Firebase/Firestore connection.", file=sys.stderr, flush=True)
 service = None
@@ -55,6 +57,32 @@ def get_service():
     return service
 
 
+def ensure_invoice_pdf(user_id, file_name=None, invoice_no=None):
+    """Find a saved invoice PDF or recreate it from the invoice data in Firestore."""
+    requested_name = Path(file_name).name if file_name else None
+    invoice = next((
+        row for row in get_invoice_history(user_id)
+        if (invoice_no and str(row.get("invoice_no")) == str(invoice_no))
+        or (requested_name and Path(row.get("file_path") or "").name == requested_name)
+    ), None)
+    if not invoice:
+        raise FileNotFoundError("The invoice PDF was not found in this account's history.")
+
+    saved_path = Path(invoice.get("file_path") or "")
+    if saved_path.is_file() and saved_path.suffix.lower() == ".pdf":
+        return str(saved_path.resolve())
+
+    invoice_data = invoice.get("invoice_data") or {}
+    if not isinstance(invoice_data, dict) or not invoice_data.get("invoice_no"):
+        raise FileNotFoundError("This invoice has no saved details to recreate its missing PDF.")
+
+    restored_path = generate_invoice_pdf(invoice_data)
+    if not update_invoice_file_path(invoice["invoice_no"], restored_path, user_id):
+        raise FileNotFoundError("The invoice record could not be updated with its restored PDF.")
+    print(f"[Invoice PDF] Restored missing PDF for {invoice['invoice_no']}.", file=sys.stderr, flush=True)
+    return str(Path(restored_path).resolve())
+
+
 def handle(request):
     action = request.get("action")
 
@@ -73,6 +101,12 @@ def handle(request):
 
     if action == "business_data":
         return {"customers": get_customers(user_id), "invoices": get_invoice_history(user_id)}
+
+    if action == "restore_invoice_pdf":
+        file_name = request.get("file_name")
+        if not isinstance(file_name, str) or Path(file_name).name != file_name or not file_name.lower().endswith(".pdf"):
+            raise ValueError("A valid invoice PDF name is required.")
+        return {"file_path": ensure_invoice_pdf(user_id, file_name=file_name)}
 
     if action == "manual":
         pipeline = get_service()
@@ -137,9 +171,10 @@ def handle(request):
                 "Email delivery is not configured. Add SMTP_HOST, SMTP_PORT, and SMTP_FROM to the project-root .env file; add SMTP_USER and SMTP_PASSWORD too if your provider requires login, then restart the backend."
             )
 
-        pdf_path = invoice.get("file_path") or ""
-        if not pdf_path or not os.path.isfile(pdf_path):
-            raise ValueError("The saved invoice PDF could not be found.")
+        try:
+            pdf_path = ensure_invoice_pdf(user_id, invoice_no=invoice_no)
+        except FileNotFoundError as error:
+            raise ValueError(str(error)) from error
         data = invoice.get("invoice_data") or {}
         message = EmailMessage()
         message["Subject"] = f"E-Invoice {invoice_no}"
