@@ -25,7 +25,7 @@ Liggy is an AI-assisted e-invoice application for small businesses. It helps use
 | Implementation demo | https://youtu.be/ESC0dAIl8T8                                                     |
 | RunPod endpoint     | Configured with `AI_URL` in local `.env` or private Replit Secrets; see [RunPod usage notes](runpod/README.md) |
 | Slide deck          | Not included in the project files currently available |
-| Demo video          | [Watch the Liggy demo](https://youtu.be/ESC0dAIl8T8) |
+| Video Pitch         |  |
 
 ## Overview
 
