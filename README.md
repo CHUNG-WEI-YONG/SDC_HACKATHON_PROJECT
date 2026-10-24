@@ -20,11 +20,11 @@ Liggy is an AI-assisted e-invoice application for small businesses. It helps use
 | Resource            | Link                                                                             |
 | ------------------- | -------------------------------------------------------------------------------- |
 | GitHub repository   | [SDC_HACKATHON_PROJECT](https://github.com/CHUNG-WEI-YONG/SDC_HACKATHON_PROJECT) |
-| Replit live app     | [Open Liggy on Replit](https://sdchackathonproject-2.replit.app/)                 |
+| Replit live demo    | [Open Liggy on Replit](https://sdchackathonproject-2.replit.app/)                |
 | Implementation demo | https://youtu.be/ESC0dAIl8T8                                                     |
 | RunPod endpoint     | Usage of Runpod in API for agent                                                 |
-| Slide deck          | _[Add the slide deck URL]_                                                       |
-| Demo video          | _[Add the demo video URL]_                                                       |
+| Slide deck          | -                                                                                |
+| Demo video          | https://youtu.be/ESC0dAIl8T8                                                     |
 
 ## Overview
 
