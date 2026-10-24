@@ -10,7 +10,6 @@ Liggy is an AI-assisted e-invoice application for small businesses. It helps use
 | --------------------- | ------------------------------------------------------------------------------------ |
 | **Team name**         | Chili Pan MEE Penang                                                                 |
 | **Team domain**       | Domain 2 — Alpha Red                                                                 |
-| **SDG track (1–17)**  | Not provided |
 | **Team leader**       | Tai Kai Xuan                                                                         |
 | **University**        | Taylor's University; Universiti Teknologi Malaysia                                    |
 | **Number of members** | 5                                                                                    |
@@ -317,7 +316,7 @@ AI can misread unclear documents or unexpected formats.
 | Tai Kai Xuan          | Team leader                             | https://github.com/xuan-yay             |
 | Soo Jiaquan           | FrontEnd and Backend                    | https://github.com/Yiibruh111           |
 | Chung Wei Yong        | Multiagent System Design                | https://github.com/CHUNG-WEI-YONG       |
-| Aaron Ling Ji Hong    | System Testing                          | Not provided |
+| Aaron Ling Ji Hong    | System Testing                          | - |
 | Kenneth Saw Chzi Yang | Code Reviewing and Document Preparation | https://github.com/kennethsawchzi-pixel |
 
 
